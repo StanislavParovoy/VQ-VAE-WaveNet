@@ -1,7 +1,7 @@
-from masked import *
+from Magenta.masked import *
 import tensorflow as tf
 
-
+decay=1e-2
 class FastGenerationConfig(object):
   def __init__(self, batch_size=1):
     self.batch_size = batch_size
@@ -12,12 +12,12 @@ class FastGenerationConfig(object):
                              shape=[1, in_channels, filters], 
                              dtype=tf.float32,
                              initializer=tf.uniform_unit_scaling_initializer(1.0),
-                             regularizer=None)
+                             regularizer=tf.keras.regularizers.l2(decay))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
                            initializer=tf.constant_initializer(0.0),
-                           regularizer=None)
+                           regularizer=tf.keras.regularizers.l2(decay))
     net += tf.matmul(gc, kernel[0]) + bias
     return net    
 
@@ -25,8 +25,8 @@ class FastGenerationConfig(object):
     num_stages = 10
     num_layers = 30
     filter_length = 3
-    width = 512
-    skip_width = 256
+    width = 256
+    skip_width = 512
     num_z = 64
 
     # Encode the source with 8-bit Mu-Law.
@@ -115,6 +115,10 @@ class FastGenerationConfig(object):
     logits = tf.reshape(logits, [-1, 256])
     probs = tf.nn.softmax(logits, name='softmax')
 
+    ema = tf.train.ExponentialMovingAverage(decay=0.9999)
+    trainable_variables = tf.trainable_variables()
+    self.shadow = {ema.average_name(v): v for v in trainable_variables}
+
     return {
         'init_ops': init_ops,
         'push_ops': push_ops,
@@ -130,15 +134,14 @@ class Config(object):
   def __init__(self):
     self.num_iters = 200000
     self.learning_rate_schedule = {
-        0: 2e-4,
-        90000: 4e-4 / 3,
-        120000: 6e-5,
-        150000: 4e-5,
-        180000: 2e-5,
-        210000: 6e-6,
-        240000: 2e-6,
+        0: 0.0002,
+        30000: 0.0001,
+        60000: 0.00008,
+        80000: 0.00004,
+        100000: 0.00002,
+        120000: 0.00001
     }
-    self.ae_hop_length = 512
+    self.ae_hop_length = 64
     self.ae_bottleneck_width = 64
 
   @staticmethod
@@ -170,12 +173,12 @@ class Config(object):
                              shape=[1, in_channels, filters], 
                              dtype=tf.float32,
                              initializer=tf.uniform_unit_scaling_initializer(1.0),
-                             regularizer=None)
+                             regularizer=tf.keras.regularizers.l2(decay))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
                            initializer=tf.constant_initializer(0.0),
-                           regularizer=None)
+                           regularizer=tf.keras.regularizers.l2(decay))
     net += tf.nn.conv1d(gc, kernel, stride=1, padding='VALID') + bias
     return net
 
@@ -183,12 +186,12 @@ class Config(object):
     num_stages = 10
     num_layers = 30
     filter_length = 3
-    width = 512
-    skip_width = 256
+    width = 256
+    skip_width = 512
     ae_num_stages = 10
     ae_num_layers = 30
     ae_filter_length = 3
-    ae_width = 128
+    ae_width = 256
 
     # Encode the source with 8-bit Mu-Law.
     x = inputs
@@ -202,13 +205,14 @@ class Config(object):
     ###
     # The Non-Causal Temporal Encoder.
     ###
+
     en = conv1d(
         x_scaled if rescale_inputs else x,
         causal=False,
         num_filters=ae_width,
         filter_length=ae_filter_length,
         name='ae_startconv',
-        is_training=is_training)
+        is_training=True)
 
     for num_layer in range(ae_num_layers):
       dilation = 2**(num_layer % ae_num_stages)
@@ -220,23 +224,23 @@ class Config(object):
           filter_length=ae_filter_length,
           dilation=dilation,
           name='ae_dilatedconv_%d' % (num_layer + 1),
-          is_training=is_training)
+          is_training=True)
       d = tf.nn.relu(d)
       en += conv1d(
           d,
           num_filters=ae_width,
           filter_length=1,
           name='ae_res_%d' % (num_layer + 1),
-          is_training=is_training)
+          is_training=True)
 
     en = conv1d(
         en,
         num_filters=self.ae_bottleneck_width,
         filter_length=1,
         name='ae_bottleneck',
-        is_training=is_training)
+        is_training=True)
     en = pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
-    self.encoding = en
+#     self.encoding = en
     print('en:', en.shape)
 
     self.k = 512
@@ -251,6 +255,7 @@ class Config(object):
     e_k = tf.nn.embedding_lookup(embedding, q_z_x)
     z_q = z_e + tf.stop_gradient(e_k - z_e)
     en = z_q
+    self.encoding = e_k
 
     self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
     tf.summary.scalar('vq_loss', self.vq_loss)
@@ -356,13 +361,26 @@ class Config(object):
             logits=logits, labels=x_indices, name='nll'),
         0,
         name='loss')
-    self.loss += self.vq_loss + self.commitment_loss
+    tf.summary.scalar('reconstruction loss', self.loss)
+
+    reg_loss = tf.reduce_sum(tf.get_collection(
+      tf.GraphKeys.REGULARIZATION_LOSSES)
+    )
+    tf.summary.scalar('regularization loss', reg_loss)
+    self.loss += reg_loss + self.vq_loss + self.commitment_loss
     print('loss:', self.loss.shape)
     self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
     self.lr = tf.constant(self.learning_rate_schedule[0])
     for key, value in self.learning_rate_schedule.items():
         self.lr = tf.cond(
             tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
-    self.opt = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
-    tf.summary.scalar('loss', self.loss)
+    opt = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+
+    ema = tf.train.ExponentialMovingAverage(decay=0.9999)
+    trainable_variables = tf.trainable_variables()
+    self.shadow = {ema.average_name(v): v for v in trainable_variables}
+    with tf.control_dependencies([opt]):
+        self.opt = ema.apply(trainable_variables)
+
     self.summary = tf.summary.merge_all()
+
