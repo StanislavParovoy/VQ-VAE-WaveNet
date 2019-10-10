@@ -1,10 +1,11 @@
-from Magenta.masked import *
-from Magenta.config import Config, FastGenerationConfig
+import sys
+sys.path.append("..")
+from masked import *
+from config import Config, FastGenerationConfig
 from mu_law_ops import *
 from tqdm import tqdm
 import numpy as np
 from utils import get_speaker_to_int
-import sys
 
 if tf.__version__ == '1.14.0':
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -13,9 +14,8 @@ else:
 
 tf.reset_default_graph()  
 
-path = 'VCTK-Corpus/wav48/p225/'
 path = ''
-name = 'p225_001.wav'
+name = '../p225_001.wav'
 content = tf.io.read_file(path + name)
 # wav = tf.audio.decode_wav(content, desired_channels=1)
 wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
@@ -25,7 +25,7 @@ wav = tf.reshape(wav[:tf.shape(wav)[0] // ratio * ratio, :], [1, -1, 1])
 batch_size = 1
 
 person = sys.argv[2]
-speaker_to_int = get_speaker_to_int('vctk_speakers.txt')
+speaker_to_int = get_speaker_to_int('../vctk_speakers.txt')
 speaker = [[0] * 109]
 speaker[0][speaker_to_int[person]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)

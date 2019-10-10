@@ -1,4 +1,4 @@
-from Magenta.masked import *
+from masked import *
 import tensorflow as tf
 
 decay=1e-2
@@ -369,7 +369,7 @@ class Config(object):
     tf.summary.scalar('regularization loss', reg_loss)
     self.loss += reg_loss + self.vq_loss + self.commitment_loss
     print('loss:', self.loss.shape)
-    self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
+    self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=True)
     self.lr = tf.constant(self.learning_rate_schedule[0])
     for key, value in self.learning_rate_schedule.items():
         self.lr = tf.cond(

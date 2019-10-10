@@ -1,4 +1,6 @@
-from Magenta.config import Config
+import sys
+sys.path.append("..")
+from config import Config
 import tensorflow as tf
 import time, os
 import numpy as np
@@ -39,6 +41,7 @@ parser.add_argument('-save',
 args = parser.parse_args()
 
 dataset_args = {
+    'relative_path': '../',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
     'start': None,
@@ -78,9 +81,9 @@ save_dir, save_name = save_path.split('/')
 if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
     
-sess.run(dataset.init)
-step = 0
 for e in range(args.num_epochs):
+    sess.run(dataset.init)
+    step = 0
     while True:
         try:
             step += 1

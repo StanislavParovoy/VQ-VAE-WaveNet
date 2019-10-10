@@ -5,26 +5,56 @@ from dataset import *
 from utils import display_time
 import tensorflow as tf
 import time, os, sys
-
+from argparse import ArgumentParser
 
 if tf.__version__ == '1.14.0':
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 else:
     tf.logging.set_verbosity(tf.logging.ERROR)
 
+parser = ArgumentParser()
+parser.add_argument('dataset',
+                    help='VCTK or LibriSpeech',
+                    metavar='DATASET')
+parser.add_argument('-m', default=1, type=int,
+                    dest='in_memory', metavar='bool',
+                    help='if loading data in memory')
+parser.add_argument('-l', default=6144, type=int,
+                    dest='max_len', metavar='int',
+                    help='number of samples one audio will contain')
+parser.add_argument('-e', default=1, type=int,
+                    dest='num_epochs', metavar='int',
+                    help='number of epoch to train')
+parser.add_argument('-b', default=4, type=int,
+                    dest='batch_size', metavar='int',
+                    help='batch size')
+parser.add_argument('-log',
+                    dest='log_path', metavar='string',
+                    help='path to save logs for tensorboard')
+parser.add_argument('-restore', 
+                    dest='restore_path', metavar='string',
+                    help='path to restore weights')
+parser.add_argument('-save',
+                    dest='save_path', metavar='string',
+                    help='path to save weights')
+args = parser.parse_args()
 
 dataset_args = {
-    'batch_size': 8,
-    'in_memory': True,
+    'batch_size': args.batch_size,
+    'in_memory': args.in_memory,
     'start': None,
     'end': None,
     'shuffle': True,
     'seed': None,
-    'max_len': 5120,
+    'max_len': args.max_len,
     'step': None, # receptive field
     'sr': 16000
 }
-dataset = LibriSpeech(**dataset_args)
+
+if args.dataset == 'VCTK':
+    dataset = VCTK(**dataset_args)
+elif args.dataset == 'LibriSpeech':
+    dataset = LibriSpeech(**dataset_args)
 num_batches = dataset.num_batches
 
 wavenet_args_path = 'wavenet.json'
@@ -77,8 +107,7 @@ print('last global step: %d, learning rate: %.8f' % (gs, lr))
 if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
 
-num_epochs = 4
-for e in range(1, num_epochs + 1):  
+for e in range(args.num_epochs): 
     sess.run(dataset.init)
     step = 0
     while True:

@@ -77,13 +77,6 @@ class Dataset():
             i = np.random.randint(0, len(wav) - max_len + 1)
             data[n] = wav[i: i + max_len]
             speakers[n] = speaker_id
-            '''
-            step = max_len if step is None else step
-            for i in range(0, len(wav) - max_len, step):
-                segment = wav[i: i + max_len]
-                data.append(segment)
-                speakers.append(speaker_id)
-            '''
 
         speakers = np.reshape(speakers, [-1, 1])
         print('data total:', len(data))
@@ -100,16 +93,24 @@ class Dataset():
 
 class LibriSpeech(Dataset):
     def __init__(self, batch_size=8, in_memory=True, 
-        filename='librispeech_train_clean_100.txt', start=None, end=None, 
+        relative_path='', start=None, end=None, 
         shuffle=True, seed=0, max_len=5120, step=None, sr=16000):
         super(LibriSpeech, self).__init__()
 
-        self.speaker_to_int = get_speaker_to_int('librispeech_speakers.txt')
+        filename='librispeech_train_clean_100.txt'
+        speaker_file = 'librispeech_speakers.txt'
+        data_dir = ''
+        if relative_path != '':
+            filename = relative_path + filename
+            speaker_file = relative_path + speaker_file
+            data_dir = relative_path + data_dir
+
+        self.speaker_to_int = get_speaker_to_int(speaker_file)
         self.all_files = self.read_files(filename, start, end, shuffle, seed)
         split_func = lambda s: s.split('/')[-1].split('-', 1)[0]
 
         if in_memory:
-            self.data, self.total, self.speakers = self._load(max_len, step, split_func)
+            self.data, self.total, self.speakers = self._load(max_len, step, split_func, data_dir)
             gen = self.generator(self.data, self.speakers)
             dataset = tf.data.Dataset.from_generator(gen, 
                 (tf.float32, tf.int32), ([max_len, 1], [1]))
@@ -119,7 +120,7 @@ class LibriSpeech(Dataset):
             self.total = len(self.all_files)
             dataset = tf.data.Dataset.from_tensor_slices((self.all_files, self.speakers))
             dataset = dataset.shuffle(self.total)
-            dataset = dataset.map(map_func=lambda x, y: self.read(x, y, max_len, sr), 
+            dataset = dataset.map(map_func=lambda x, y: self.read(x, y, max_len, sr, data_dir), 
                                   num_parallel_calls=4)
 
         dataset = dataset.batch(batch_size, drop_remainder=False)
@@ -132,14 +133,20 @@ class LibriSpeech(Dataset):
 
 
 class VCTK(Dataset):
-    def __init__(self, batch_size=8, in_memory=True, filename='vctk_train.txt', 
+    def __init__(self, batch_size=8, in_memory=True, relative_path='', 
         start=None, end=None, shuffle=True, seed=0, max_len=5120, step=None, sr=16000):
         super(VCTK, self).__init__()
 
-        self.speaker_to_int = get_speaker_to_int('vctk_speakers.txt')
+        filename = 'vctk_train.txt'
+        speaker_file = 'vctk_speakers.txt'
+        data_dir = 'VCTK-Corpus/wav48/'
+        if relative_path != '':
+            filename = relative_path + filename
+            speaker_file = relative_path + speaker_file
+            data_dir = relative_path + data_dir
+        self.speaker_to_int = get_speaker_to_int(speaker_file)
         self.all_files = self.read_files(filename, start, end, shuffle, seed)
         split_func = lambda s: s.split('/')[0]
-        data_dir = 'VCTK-Corpus/wav48/'
 
         if in_memory:
             self.data, self.total, self.speakers = self._load(max_len, step, split_func, data_dir)
