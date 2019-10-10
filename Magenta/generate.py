@@ -1,9 +1,10 @@
-from masked import *
-from config import Config, FastGenerationConfig
+from Magenta.masked import *
+from Magenta.config import Config, FastGenerationConfig
 from mu_law_ops import *
 from tqdm import tqdm
 import numpy as np
 from utils import get_speaker_to_int
+import sys
 
 if tf.__version__ == '1.14.0':
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -18,15 +19,17 @@ name = 'p225_001.wav'
 content = tf.io.read_file(path + name)
 # wav = tf.audio.decode_wav(content, desired_channels=1)
 wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
-wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
+ratio = 64
+wav = tf.reshape(wav[:tf.shape(wav)[0] // ratio * ratio, :], [1, -1, 1])
 # sample_length = tf.shape(wav)[1]
 batch_size = 1
 
+person = sys.argv[2]
 speaker_to_int = get_speaker_to_int('vctk_speakers.txt')
 speaker = [[0] * 109]
-speaker[0][speaker_to_int['p225']] = 1
+speaker[0][speaker_to_int[person]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)
-speaker = tf.constant(speaker)
+gc = tf.constant(speaker)
 
 config = Config()
 # x = tf.placeholder(tf.float32, shape=[batch_size, sample_length, 1])
@@ -34,7 +37,7 @@ config.build(inputs=wav, gc=None, is_training=False)
 
 generator = FastGenerationConfig(batch_size=batch_size)
 x_t = tf.placeholder(tf.float32, shape=[batch_size, 1])
-net = generator.build(inputs=x_t, gc=speaker)
+net = generator.build(inputs=x_t, gc=gc)
 net['x_t'] = x_t
 
 def sample(probs):
@@ -46,11 +49,10 @@ def sample(probs):
   dec = np.reshape(mu_law_decode_np(pred), [])
   return raw, dec
 
-import sys
 gs = int(sys.argv[1])
 saved_path = 'saved_vqvae_config/weights-%d'%gs
 sess = tf.Session()  
-saver = tf.train.Saver()
+saver = tf.train.Saver(generator.shadow)
 saver.restore(sess, saved_path)
 
 encoding = sess.run(config.encoding)
@@ -62,10 +64,11 @@ audio = np.zeros([batch_size, 1], dtype=np.float32)
 total = []
 sess.run(net['init_ops'])
 for i in tqdm(range(length)):
-  probs, _ = sess.run([net['predictions'], net['push_ops']], {x_t: audio, net['encoding']: encoding[:, i // 512]})
+  probs, _ = sess.run([net['predictions'], net['push_ops']], {x_t: audio, net['encoding']: encoding[:, i // ratio]})
   raw, dec = sample(probs)
   total.append(dec.reshape([]))
   audio = dec.reshape([batch_size, 1])
 from scipy.io import wavfile
-wavfile.write('vqvae_config.wav', 16000, np.asarray(total))
+wavfile.write('vqvae_config_%d_%s.wav'%(gs, person), 16000, np.asarray(total))
+
 
