@@ -41,7 +41,7 @@ parser.add_argument('-save',
 args = parser.parse_args()
 
 dataset_args = {
-    'relative_path': '../',
+    'relative_path': '../data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
     'start': None,
@@ -65,8 +65,7 @@ sess = tf.Session()
 sess.run(tf.global_variables_initializer())
 
 writer = tf.summary.FileWriter(args.log_path, sess.graph)
-saver = tf.train.Saver(model.shadow)
-
+saver = tf.train.Saver(model.variables)
 
 if args.restore_path is not None:
     saver.restore(sess, args.restore_path)
@@ -103,3 +102,4 @@ for e in range(args.num_epochs):
             break
     print()
     saver.save(sess, save_path, global_step=model.global_step)
+
