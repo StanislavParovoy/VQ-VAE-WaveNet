@@ -369,7 +369,7 @@ class Config(object):
     tf.summary.scalar('regularization loss', reg_loss)
     self.loss += reg_loss + self.vq_loss + self.commitment_loss
     print('loss:', self.loss.shape)
-    self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=True)
+    self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
     self.lr = tf.constant(self.learning_rate_schedule[0])
     for key, value in self.learning_rate_schedule.items():
         self.lr = tf.cond(
@@ -378,7 +378,8 @@ class Config(object):
 
     ema = tf.train.ExponentialMovingAverage(decay=0.9999)
     trainable_variables = tf.trainable_variables()
-    self.shadow = {ema.average_name(v): v for v in trainable_variables}
+    self.variables = {ema.average_name(v): v for v in trainable_variables}
+    self.variables[self.global_step.name] = self.global_step
     with tf.control_dependencies([opt]):
         self.opt = ema.apply(trainable_variables)
 

@@ -28,18 +28,22 @@ parser.add_argument('-e', default=1, type=int,
 parser.add_argument('-b', default=4, type=int,
                     dest='batch_size', metavar='int',
                     help='batch size')
-parser.add_argument('-log',
+parser.add_argument('-en', default='Magenta',
+                    dest='encoder', metavar='string',
+                    help='encoder name')
+parser.add_argument('-log', default='log_vqvae', 
                     dest='log_path', metavar='string',
                     help='path to save logs for tensorboard')
-parser.add_argument('-restore', 
+parser.add_argument('-restore',
                     dest='restore_path', metavar='string',
                     help='path to restore weights')
-parser.add_argument('-save',
+parser.add_argument('-save', default='saved_vqvae/weights', 
                     dest='save_path', metavar='string',
                     help='path to save weights')
 args = parser.parse_args()
 
 dataset_args = {
+    'relative_path': 'data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
     'start': None,
@@ -57,53 +61,52 @@ elif args.dataset == 'LibriSpeech':
     dataset = LibriSpeech(**dataset_args)
 num_batches = dataset.num_batches
 
+encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
+if args.encoder in encoders:
+    encoder = encoders[args.encoder]()
+else:
+    raise NotImplementedError("encoder %s not implemented" % args.encoder)
 wavenet_args_path = 'wavenet.json'
-encoder = Encoder_Magenta()
 decoder = WavenetDecoder(wavenet_args_path)
+
 model_args = {
     'x': dataset.x,
     'speaker': dataset.y,
     'encoder': encoder,
     'decoder': decoder,
     'latent_dim': 64,
-    'k': 256, 
+    'k': 512, 
     'beta': 0.25,
-    'verbose': True
+    'verbose': False
 }
 
 learning_rate_schedule = {
-    0: 2e-4,
-    90000: 4e-4 / 3,
-    120000: 6e-5,
-    150000: 4e-5,
-    180000: 2e-5,
-    210000: 6e-6,
-    240000: 2e-6,
+    0: 0.0002,
+    30000: 0.0001,
+    60000: 0.00008,
+    80000: 0.00004,
+    100000: 0.00002,
+    120000: 0.00001
 }
 
 model = VQVAE(model_args)
 model.build(learning_rate_schedule=learning_rate_schedule)
 
-save_dir = 'saved_vqvae'
-save_name = 'weights'
-
-if len(sys.argv) < 2:
-    restore_path = None
-else:
-    last_gs = int(sys.argv[1])
-    restore_path = save_dir + '/' + save_name + '-%d'%last_gs
-
 sess = tf.Session()
 writer = tf.summary.FileWriter('logs_vqvae', sess.graph)
 saver = tf.train.Saver()
-if restore_path is not None:
-    saver.restore(sess, restore_path)
+
+if args.restore_path is not None:
+    saver.restore(sess, args.restore_path)
 else:
     sess.run(tf.global_variables_initializer())
 
 gs = sess.run(model.global_step)
 lr = sess.run(model.lr)
 print('last global step: %d, learning rate: %.8f' % (gs, lr))
+
+save_path = args.save_path
+save_dir, save_name = save_path.split('/')
 if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
 
@@ -129,4 +132,4 @@ for e in range(args.num_epochs):
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:
             break
-    saver.save(sess, save_dir + '/' + save_name, global_step=model.global_step)
+    saver.save(sess, save_path, global_step=model.global_step)
