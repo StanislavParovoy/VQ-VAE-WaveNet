@@ -21,8 +21,6 @@ from __future__ import print_function
 import tensorflow as tf
 import numpy as np
 
-decay=1e-2
-
 def shift_right(x):
   shape = x.get_shape().as_list()
   x_padded = tf.pad(x, [[0, 0], [1, 0], [0, 0]])
@@ -70,7 +68,8 @@ def conv1d(x,
            dilation=1,
            causal=True,
            kernel_initializer=tf.uniform_unit_scaling_initializer(1.0),
-           biases_initializer=tf.constant_initializer(0.0),
+           biases_initializer=tf.constant_initializer(1.0),
+           regularizer=None,
            is_training=True):
   batch_size, length, num_input_channels = x.get_shape().as_list()
 
@@ -82,10 +81,10 @@ def conv1d(x,
   with tf.variable_scope(name):
     weights = tf.get_variable(
         'W', shape=kernel_shape, initializer=kernel_initializer,
-        regularizer=tf.keras.regularizers.l2(decay), trainable=is_training)
+        regularizer=regularizer, trainable=is_training)
     biases = tf.get_variable(
         'biases', shape=biases_shape, initializer=biases_initializer,
-        regularizer=tf.keras.regularizers.l2(decay), trainable=is_training)
+        regularizer=regularizer, trainable=is_training)
 
   x_ttb = time_to_batch(x, dilation)
   if filter_length > 1 and causal:
@@ -142,11 +141,9 @@ def causal_linear(x, n_inputs, n_outputs, name, filter_length, rate, batch_size)
 
   w = tf.get_variable(
       name=name + "/W",
-      regularizer=tf.keras.regularizers.l2(decay),
       shape=[1, filter_length, n_inputs, n_outputs],
       dtype=tf.float32)
   b = tf.get_variable(
-      regularizer=tf.keras.regularizers.l2(decay),
       name=name + "/biases", shape=[n_outputs], dtype=tf.float32)
 
   if filter_length == 3:
@@ -165,10 +162,8 @@ def causal_linear(x, n_inputs, n_outputs, name, filter_length, rate, batch_size)
 
 def linear(x, n_inputs, n_outputs, name):
   w = tf.get_variable(name=name + "/W", 
-    regularizer=tf.keras.regularizers.l2(decay),
     shape=[1, 1, n_inputs, n_outputs], dtype=tf.float32)
   b = tf.get_variable(name=name + "/biases", 
-    regularizer=tf.keras.regularizers.l2(decay),
     shape=[n_outputs], dtype=tf.float32)
   y = tf.nn.bias_add(tf.matmul(x, w[0, 0]), b)
   return y

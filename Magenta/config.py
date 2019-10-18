@@ -1,7 +1,18 @@
 from masked import *
 import tensorflow as tf
 
-decay=1e-2
+decay=1e-5
+num_stages = 10
+num_layers = 50
+filter_length = 2
+width = 256
+skip_width = 512
+ae_num_stages = 10
+ae_num_layers = 8
+ae_filter_length = 16
+ae_width = 256
+ae_bottleneck_width = 256
+
 class FastGenerationConfig(object):
   def __init__(self, batch_size=1):
     self.batch_size = batch_size
@@ -11,23 +22,15 @@ class FastGenerationConfig(object):
     kernel = tf.get_variable(name='kernel', 
                              shape=[1, in_channels, filters], 
                              dtype=tf.float32,
-                             initializer=tf.uniform_unit_scaling_initializer(1.0),
-                             regularizer=tf.keras.regularizers.l2(decay))
+                             initializer=tf.uniform_unit_scaling_initializer(1.0))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
-                           initializer=tf.constant_initializer(0.0),
-                           regularizer=tf.keras.regularizers.l2(decay))
+                           initializer=tf.constant_initializer(1.0))
     net += tf.matmul(gc, kernel[0]) + bias
     return net    
 
   def build(self, inputs, gc):
-    num_stages = 10
-    num_layers = 30
-    filter_length = 3
-    width = 256
-    skip_width = 512
-    num_z = 64
 
     # Encode the source with 8-bit Mu-Law.
     x = inputs
@@ -40,7 +43,7 @@ class FastGenerationConfig(object):
     print('x_scaled:', x_scaled.shape)
 
     encoding = tf.placeholder(
-        name='encoding', shape=[batch_size, num_z], dtype=tf.float32)
+        name='encoding', shape=[batch_size, ae_bottleneck_width], dtype=tf.float32)
     en = encoding
 
     init_ops, push_ops = [], []
@@ -86,7 +89,7 @@ class FastGenerationConfig(object):
         push_ops.append(push)
 
       # local conditioning
-      d += linear(en, num_z, width * 2, name='cond_map_%d' % (i + 1))
+      d += linear(en, ae_bottleneck_width, width * 2, name='cond_map_%d' % (i + 1))
 
       # global conditioning
       with tf.variable_scope('gc_%d'%(i+1)):
@@ -105,7 +108,9 @@ class FastGenerationConfig(object):
 
     s = tf.nn.relu(s)
     s = (linear(s, skip_width, skip_width, name='out1') + linear(
-        en, num_z, skip_width, name='cond_map_out1'))
+        en, ae_bottleneck_width, skip_width, name='cond_map_out1'))
+    with tf.variable_scope("gc_final"):
+        s = self.add_gc(s, gc, skip_width)
     s = tf.nn.relu(s)
 
     ###
@@ -115,7 +120,7 @@ class FastGenerationConfig(object):
     logits = tf.reshape(logits, [-1, 256])
     probs = tf.nn.softmax(logits, name='softmax')
 
-    ema = tf.train.ExponentialMovingAverage(decay=0.9999)
+    ema = tf.train.ExponentialMovingAverage(decay=0.9996)
     trainable_variables = tf.trainable_variables()
     self.shadow = {ema.average_name(v): v for v in trainable_variables}
 
@@ -132,17 +137,15 @@ class Config(object):
   """Configuration object that helps manage the graph."""
 
   def __init__(self):
-    self.num_iters = 200000
     self.learning_rate_schedule = {
-        0: 0.0002,
-        30000: 0.0001,
-        60000: 0.00008,
+        0: 0.0001,
+        30000: 0.00008,
+        60000: 0.00006,
         80000: 0.00004,
         100000: 0.00002,
         120000: 0.00001
     }
     self.ae_hop_length = 64
-    self.ae_bottleneck_width = 64
 
   @staticmethod
   def _condition(x, encoding):
@@ -172,32 +175,20 @@ class Config(object):
     kernel = tf.get_variable(name='kernel', 
                              shape=[1, in_channels, filters], 
                              dtype=tf.float32,
-                             initializer=tf.uniform_unit_scaling_initializer(1.0),
-                             regularizer=tf.keras.regularizers.l2(decay))
+                             initializer=tf.uniform_unit_scaling_initializer(1.0))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
-                           initializer=tf.constant_initializer(0.0),
-                           regularizer=tf.keras.regularizers.l2(decay))
+                           initializer=tf.constant_initializer(1.0))
     net += tf.nn.conv1d(gc, kernel, stride=1, padding='VALID') + bias
     return net
 
   def build(self, inputs, gc, is_training, rescale_inputs=True):
-    num_stages = 10
-    num_layers = 30
-    filter_length = 3
-    width = 256
-    skip_width = 512
-    ae_num_stages = 10
-    ae_num_layers = 30
-    ae_filter_length = 3
-    ae_width = 256
 
     # Encode the source with 8-bit Mu-Law.
     x = inputs
     x_quantized = mu_law(x)
     x_scaled = x_quantized # [-1, 1]
-    # x_scaled = tf.cast(x_quantized, tf.float32) / 128.0
     print('x:', x.shape)
     print('x_quantized:', x_quantized.shape)
     print('x_scaled:', x_scaled.shape)
@@ -207,12 +198,12 @@ class Config(object):
     ###
 
     en = conv1d(
-        x_scaled if rescale_inputs else x,
-        causal=False,
-        num_filters=ae_width,
-        filter_length=ae_filter_length,
-        name='ae_startconv',
-        is_training=True)
+         x_scaled if rescale_inputs else x,
+         causal=False,
+         num_filters=ae_width,
+         filter_length=ae_filter_length,
+         name='ae_startconv',
+         is_training=True)
 
     for num_layer in range(ae_num_layers):
       dilation = 2**(num_layer % ae_num_stages)
@@ -227,44 +218,51 @@ class Config(object):
           is_training=True)
       d = tf.nn.relu(d)
       en += conv1d(
-          d,
-          num_filters=ae_width,
-          filter_length=1,
-          name='ae_res_%d' % (num_layer + 1),
-          is_training=True)
+            d,
+            num_filters=ae_width,
+            filter_length=1,
+            name='ae_res_%d' % (num_layer + 1),
+            is_training=True)
 
     en = conv1d(
-        en,
-        num_filters=self.ae_bottleneck_width,
-        filter_length=1,
-        name='ae_bottleneck',
-        is_training=True)
+         en,
+         num_filters=ae_bottleneck_width,
+         filter_length=1,
+         name='ae_bottleneck',
+         is_training=True)
     en = pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
-#     self.encoding = en
-    print('en:', en.shape)
+    self.encoding = en
 
+    print('en:', en.shape)
+#     '''
     self.k = 512
-    self.latent_dim = self.ae_bottleneck_width
+    self.latent_dim = ae_bottleneck_width
     z_e = en
-    embedding = tf.get_variable(name='embedding', 
-                                shape=[self.k, self.latent_dim], 
-                                initializer=tf.uniform_unit_scaling_initializer())
+    self.embedding = tf.get_variable(name='embedding', 
+                                 # initializer = tf.eye(self.latent_dim))
+                                 shape=[self.k, self.latent_dim], 
+                                 initializer=tf.initializers.orthogonal(gain=1.0),
+                                 # initializer=tf.uniform_unit_scaling_initializer(),
+                                 regularizer=tf.keras.regularizers.l2(decay))
     expanded_ze = tf.expand_dims(z_e, -2)
-    distances = tf.reduce_sum((expanded_ze - embedding) ** 2, axis=-1)
+    distances = tf.reduce_sum((expanded_ze - self.embedding) ** 2, axis=-1)
     q_z_x = tf.argmin(distances, axis=-1)
-    e_k = tf.nn.embedding_lookup(embedding, q_z_x)
+    e_k = tf.nn.embedding_lookup(self.embedding, q_z_x)
     z_q = z_e + tf.stop_gradient(e_k - z_e)
     en = z_q
     self.encoding = e_k
 
-    self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
-    tf.summary.scalar('vq_loss', self.vq_loss)
+#     self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
+#     tf.summary.scalar('vq_loss', self.vq_loss)
+    self.vq_loss = 0
 
-    self.commitment_loss = 0.25 * tf.reduce_mean((z_e - tf.stop_gradient(e_k)) ** 2)
+    self.commitment_loss = 0.2 * tf.reduce_mean((z_e - e_k) ** 2)
     tf.summary.scalar('commitment_loss', self.commitment_loss)
+#     '''
+#     self.commitment_loss, self.vq_loss = 0, 0
 
     if not is_training:
-      return en
+      return e_k
     print('gc:', gc.shape) # [b, 1]
 
     ###
@@ -277,6 +275,7 @@ class Config(object):
         num_filters=width,
         filter_length=filter_length,
         name='startconv',
+        regularizer=tf.keras.regularizers.l2(decay),
         is_training=is_training)
 
     # Set up skip connections.
@@ -285,6 +284,7 @@ class Config(object):
         num_filters=skip_width,
         filter_length=1,
         name='skip_start',
+        regularizer=tf.keras.regularizers.l2(decay),
         is_training=is_training)
 
     # Residual blocks with skip connections.
@@ -296,6 +296,7 @@ class Config(object):
           filter_length=filter_length,
           dilation=dilation,
           name='dilatedconv_%d' % (i + 1),
+          regularizer=tf.keras.regularizers.l2(decay),
           is_training=is_training)
       if en is not None:
         d = self._condition(d,
@@ -315,17 +316,19 @@ class Config(object):
       d = d_sigmoid * d_tanh
 
       l += conv1d(
-          d,
-          num_filters=width,
-          filter_length=1,
-          name='res_%d' % (i + 1),
-          is_training=is_training)
+           d,
+           num_filters=width,
+           filter_length=1,
+           name='res_%d' % (i + 1),
+           regularizer=tf.keras.regularizers.l2(decay),
+           is_training=is_training)
       s += conv1d(
-          d,
-          num_filters=skip_width,
-          filter_length=1,
-          name='skip_%d' % (i + 1),
-          is_training=is_training)
+           d,
+           num_filters=skip_width,
+           filter_length=1,
+           name='skip_%d' % (i + 1),
+           regularizer=tf.keras.regularizers.l2(decay),
+           is_training=is_training)
 
     s = tf.nn.relu(s)
     s = conv1d(
@@ -333,55 +336,61 @@ class Config(object):
         num_filters=skip_width,
         filter_length=1,
         name='out1',
+        regularizer=tf.keras.regularizers.l2(decay),
         is_training=is_training)
 
     if en is not None:
-      s = self._condition(s,
-                          conv1d(
-                              en,
-                              num_filters=skip_width,
-                              filter_length=1,
-                              name='cond_map_out1',
-                              is_training=is_training))
+      s = self._condition(
+                s,
+                conv1d(
+                  en,
+                  num_filters=skip_width,
+                  filter_length=1,
+                  name='cond_map_out1',
+                  is_training=is_training))
+    if gc is not None:
+      with tf.variable_scope('gc_final'):
+        s = self.add_gc(s, gc, filters=skip_width)
     s = tf.nn.relu(s)
 
     ###
     # Compute the logits and get the loss.
     ###
     logits = conv1d(
-        s,
-        num_filters=256,
-        filter_length=1,
-        name='logits',
-        is_training=is_training)
+             s,
+             num_filters=256,
+             filter_length=1,
+             name='logits',
+             regularizer=tf.keras.regularizers.l2(decay),
+             is_training=is_training)
     logits = tf.reshape(logits, [-1, 256])
     x_indices = tf.reshape(tf.cast((x_quantized + 1) / 2 * 255 + 0.5, tf.int32), [-1])
-    self.loss = tf.reduce_mean(
-        tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=logits, labels=x_indices, name='nll'),
-        0,
-        name='loss')
-    tf.summary.scalar('reconstruction loss', self.loss)
+    self.reconstruction_loss = tf.reduce_mean(
+      tf.nn.sparse_softmax_cross_entropy_with_logits(
+        logits=logits, labels=x_indices, name='nll'),
+      0,
+      name='loss')
+    tf.summary.scalar('reconstruction loss', self.reconstruction_loss)
 
     reg_loss = tf.reduce_sum(tf.get_collection(
       tf.GraphKeys.REGULARIZATION_LOSSES)
     )
     tf.summary.scalar('regularization loss', reg_loss)
-    self.loss += reg_loss + self.vq_loss + self.commitment_loss
-    print('loss:', self.loss.shape)
+    self.loss = self.reconstruction_loss + reg_loss + self.vq_loss + self.commitment_loss
     self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
     self.lr = tf.constant(self.learning_rate_schedule[0])
     for key, value in self.learning_rate_schedule.items():
-        self.lr = tf.cond(
-            tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
-    opt = tf.train.AdamOptimizer(self.lr).minimize(self.loss, global_step=self.global_step)
+      self.lr = tf.cond(
+        tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
+    opt = tf.train.AdamOptimizer(self.lr, beta1=0.5, beta2=0.999).minimize(
+      self.loss, global_step=self.global_step)
 
-    ema = tf.train.ExponentialMovingAverage(decay=0.9999)
+    ema = tf.train.ExponentialMovingAverage(decay=0.995)
     trainable_variables = tf.trainable_variables()
     self.variables = {ema.average_name(v): v for v in trainable_variables}
     self.variables[self.global_step.name] = self.global_step
     with tf.control_dependencies([opt]):
-        self.opt = ema.apply(trainable_variables)
+      self.opt = ema.apply(trainable_variables)
 
     self.summary = tf.summary.merge_all()
 
