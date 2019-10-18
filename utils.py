@@ -3,26 +3,32 @@ import numpy as np
 
 
 def sample(pdf):
+    ''' sample from pdf
+    args:
+        pdf: pdf, shape [b, quantization_channels]
+    returns:
+        sampled and mu_law decoded, shape [b], in range [-1, 1]
+    '''
     cdf = np.cumsum(pdf, axis=1)
-    cdf = cdf.reshape([-1])
-    pred = cdf.searchsorted(np.random.rand())
-    raw = np.reshape(pred, [])
-    decoded = np.reshape(mu_law_decode_np(pred), [])
-    return raw, decoded
+    batch_size = cdf.shape[0]
+    sample_prob = np.random.rand(batch_size)
+    pred = np.zeros(batch_size, dtype=np.float32)
+    for i, prob in enumerate(sample_prob):
+        pred[i] = cdf[i].searchsorted(prob)
+    decoded = mu_law_decode_np(pred)
+    return decoded
 
 
 def decode(predictions, mode='sample'):
     if mode == 'sample':
-        raw, decoded = sample(predictions)
+        return sample(predictions)
     elif mode == 'greedy':
         prob = tf.nn.softmax(predictions)
         pred = tf.math.argmax(prob, axis=-1)
-        raw = tf.reshape(pred, [])
-        decoded = tf.reshape(mu_law_decode(pred), [])
+        return mu_law_decode(pred)
     else:
         print('implement on your own')
-        return 0, 0
-    return raw, decoded
+        return 0
 
 
 def display_time(t, second):
@@ -82,5 +88,4 @@ def get_speaker_to_int(speaker_path):
 if __name__ == '__main__':
     write_speaker_to_int('vctk')
     write_speaker_to_int('librispeech')
-
 

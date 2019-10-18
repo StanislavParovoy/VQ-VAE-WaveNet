@@ -44,12 +44,7 @@ dataset_args = {
     'relative_path': '../data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
-    'start': None,
-    'end': None,
-    'shuffle': True,
-    'seed': None,
     'max_len': args.max_len,
-    'step': None, # receptive field
     'sr': 16000
 }
 
@@ -88,7 +83,7 @@ for e in range(args.num_epochs):
             step += 1
             t = time.time()
             _, l, summary, gs, lr = sess.run([model.opt, 
-                                              model.loss, 
+                                              model.reconstruction_loss, 
                                               model.summary, 
                                               model.global_step,
                                               model.lr])

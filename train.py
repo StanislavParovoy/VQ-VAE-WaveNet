@@ -46,12 +46,7 @@ dataset_args = {
     'relative_path': 'data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
-    'start': None,
-    'end': None,
-    'shuffle': True,
-    'seed': None,
     'max_len': args.max_len,
-    'step': None, # receptive field
     'sr': 16000
 }
 
@@ -133,3 +128,4 @@ for e in range(args.num_epochs):
         except tf.errors.OutOfRangeError:
             break
     saver.save(sess, save_path, global_step=model.global_step)
+

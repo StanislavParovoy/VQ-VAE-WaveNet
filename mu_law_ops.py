@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 
+
 def mu_law_encode(x, quantization_channels=256, to_int=False):
     mu = tf.cast(quantization_channels - 1, tf.float32)
     x = tf.clip_by_value(x, -1., 1.)

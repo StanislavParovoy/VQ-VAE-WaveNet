@@ -1,32 +1,52 @@
 import sys
 sys.path.append("..")
-from masked import *
 from config import Config, FastGenerationConfig
 from mu_law_ops import *
 from tqdm import tqdm
+from scipy.io import wavfile
 import numpy as np
-from utils import get_speaker_to_int
+from utils import get_speaker_to_int, decode
+from argparse import ArgumentParser
 
 if tf.__version__ == '1.14.0':
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 else:
     tf.logging.set_verbosity(tf.logging.ERROR)
+    
+parser = ArgumentParser()
+parser.add_argument('-restore',
+                    dest='restore_path',
+                    help='path to weights')
+parser.add_argument('-save',
+                    dest='save_name',
+                    help='filename to save as')
+parser.add_argument('-audio',
+                    dest='audio_path',
+                    help='path to audio')
+parser.add_argument('-speakers', 
+                    nargs='+',
+                    dest='speakers',
+                    help='speaker id')
+parser.add_argument('-ratio', default=64, type=int, 
+                    dest='ratio',
+                    help='local condition ratio')
+parser.add_argument('-mode', default='sample', 
+                    dest='mode',
+                    help='decode mode, sample or greedy')
 
-tf.reset_default_graph()  
+args = parser.parse_args()
+gs = int(args.restore_path.split('-')[-1])
+batch_size = len(args.speakers)
 
-path = ''
-name = '../p225_001.wav'
-content = tf.io.read_file(path + name)
-# wav = tf.audio.decode_wav(content, desired_channels=1)
+content = tf.io.read_file(args.audio_path)
 wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
-ratio = 64
-wav = tf.reshape(wav[:tf.shape(wav)[0] // ratio * ratio, :], [1, -1, 1])
-batch_size = 1
+wav = tf.reshape(wav[:tf.shape(wav)[0] // args.ratio * args.ratio, :], [1, -1, 1])
+wav = tf.tile(wav, [batch_size, 1, 1])
 
-person = sys.argv[2]
 speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
-speaker = [[0] * 109]
-speaker[0][speaker_to_int[person]] = 1
+speaker = [[0] * 109] * len(args.speakers)
+for i, s in enumerate(args.speakers):
+    speaker[i][speaker_to_int[s]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)
 gc = tf.constant(speaker)
 
@@ -36,36 +56,29 @@ config.build(inputs=wav, gc=None, is_training=False)
 generator = FastGenerationConfig(batch_size=batch_size)
 x_t = tf.placeholder(tf.float32, shape=[batch_size, 1])
 net = generator.build(inputs=x_t, gc=gc)
-net['x_t'] = x_t
 
-def sample(probs):
-  cdf = np.cumsum(probs, axis=1)
-  cdf = cdf.reshape([-1])
-  pred = cdf.searchsorted(np.random.rand())
-  raw = np.reshape(pred, [])
-  dec = np.reshape(mu_law_decode_np(pred), [])
-  return raw, dec
-
-gs = int(sys.argv[1])
-saved_path = 'saved_vqvae_config/weights-%d'%gs
 sess = tf.Session()  
 saver = tf.train.Saver(generator.shadow)
-saver.restore(sess, saved_path)
+saver.restore(sess, args.restore_path)
 
 encoding = sess.run(config.encoding)
 length = sess.run(wav).shape[1]
+print('embedding:')
+emb = sess.run(config.embedding)
+print(emb)
 print('running encoding:', encoding.shape)
-print('running gc:', speaker.shape)
+
 audio = np.zeros([batch_size, 1], dtype=np.float32)
-total = []
+to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(net['init_ops'])
+
 for i in tqdm(range(length)):
-  probs, _ = sess.run([net['predictions'], net['push_ops']], {x_t: audio, net['encoding']: encoding[:, i // ratio]})
-  raw, dec = sample(probs)
-  total.append(dec.reshape([]))
-  audio = dec.reshape([batch_size, 1])
-from scipy.io import wavfile
-wavfile.write('vqvae_config_%d_%s.wav'%(gs, person), 16000, np.asarray(total))
+    probs, _ = sess.run([net['predictions'], net['push_ops']], 
+        {x_t: audio, net['encoding']: encoding[:, i // args.ratio]})
+    decoded = decode(probs, mode=args.mode)
+    to_write[:, i] = decoded
+    audio = decoded.reshape([batch_size, 1])
 
-
+for i, s in enumerate(args.speakers):
+    wavfile.write(args.save_name + '_%d_%s.wav'%(gs, s), 16000, to_write[i])
 
