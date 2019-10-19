@@ -68,7 +68,7 @@ else:
     sess.run(tf.global_variables_initializer())
 gs = sess.run(model.global_step)
 lr = sess.run(model.lr)
-print('last global step: %d, learning rate: %.8f' % (gs, lr))
+print('[restore] last global step: %d, learning rate: %.8f' % (gs, lr))
 
 save_path = args.save_path
 save_dir, save_name = save_path.split('/')
@@ -90,7 +90,7 @@ for e in range(args.num_epochs):
             writer.add_summary(summary, gs)
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [loss %.5f] [lr %.7f]' % (l, lr)
+            loss = ' [loss %.5f] [lr %.5f]' % (l, lr)
             second = (num_batches - step) * t
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:
