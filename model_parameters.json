@@ -1,0 +1,22 @@
+{
+
+"k": 512,
+
+"latent_dim": 512,
+
+"beta": 0.25,
+
+"wavenet_parameters": "wavenet_parameters.json",
+
+"verbose": true,
+
+"learning_rate_schedule": {
+    "0": 0.0001,
+    "30000": 0.00008,
+    "40000": 0.00006,
+    "60000": 0.00004,
+    "80000": 0.00002,
+    "100000": 0.00001
+}
+
+}

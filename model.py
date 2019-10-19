@@ -1,6 +1,4 @@
 import tensorflow as tf
-# import tensorflow_probability as tfp
-import numpy as np
 
 
 class VQVAE(object):
@@ -21,22 +19,15 @@ class VQVAE(object):
             self._print('input h:', self.h)
 
 
-    def _build_prior(self):
-        with tf.name_scope('prior'):
-            return
-            low, high = tf.zeros(self.latent_dim), tf.ones(self.latent_dim)
-            self.prior = tfp.distributions.Uniform(low=low, high=high)
-
-
     def _build_encoder(self):
         self.z_e = self.encoder.build(self.x)
         self._print('z_e:', self.z_e)
 
 
     def _build_embedding_space(self):
-        # self.embedding = tf.Variable(tf.random.uniform([self.k, self.latent_dim]))
         self.embedding = tf.get_variable(name='embedding', 
                                          shape=[self.k, self.latent_dim], 
+                                         regularizer=tf.keras.regularizers.l2(1e-5),
                                          initializer=tf.uniform_unit_scaling_initializer())
         self._print('embedding:', self.embedding)
 
@@ -76,12 +67,6 @@ class VQVAE(object):
 
 
     def _compute_loss(self):
-        '''
-        name   reconstruction          vq                commitment     
-        loss = log(p(x|z_q) + l2_error(sg[z_e(x)] - e) + beta * l2_error(z_e(x) - sg[e])
-        grad   encoder, decoder        embedding         encoder
-        '''
-
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
                                     labels=self.labels,
                                     logits=self.x_z_q)
@@ -94,41 +79,30 @@ class VQVAE(object):
         self.commitment_loss = self.beta * \
             tf.reduce_mean((self.z_e - tf.stop_gradient(self.e_k)) ** 2)
         tf.summary.scalar('commitment_loss', self.commitment_loss)
+
+        self.regularisation_loss = \
+            tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
+        tf.summary.scalar('regularisation_loss', self.regularisation_loss)
+
         self.summary = tf.summary.merge_all()
 
 
     def _build_optimiser(self, learning_rate_schedule):
         assert None not in [self.reconstruction_loss, self.vq_loss, self.commitment_loss]
 
-        # self.global_step = tf.train.get_or_create_global_step()
         self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
         self.lr = tf.Variable(learning_rate_schedule[0])
         for key, value in learning_rate_schedule.items():
             self.lr = tf.cond(
                 tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
+
         optimiser = tf.train.AdamOptimizer(self.lr)
-
-        # optimise reconstruction loss on encoder and decoder
-        encoder_variables = tf.trainable_variables(scope='encoder')
-        # decoder_variables = tf.trainable_variables(scope='decoder')
-        reconstruction_op = optimiser.minimize(self.reconstruction_loss)
-        # reconstruction_gradients = optimiser.compute_gradients(
-            # self.reconstruction_loss, decoder_variables + encoder_variables)
-
-        # optimise commitment loss on encoder
-        commitment_gradients = optimiser.compute_gradients(
-            self.commitment_loss, encoder_variables)
-
-        # optimise vq loss on embedding space
-        embedding_gradients = optimiser.compute_gradients(self.vq_loss, [self.embedding])
-
-        self.train_op = [optimiser.apply_gradients(
-            commitment_gradients + embedding_gradients,
-            global_step=self.global_step), reconstruction_op]
+        self.train_op = optimiser.minimize(
+            self.reconstruction_loss + self.vq_loss + self.commitment_loss,
+            global_step=self.global_step)
 
 
     def _build(self):
-        # self._build_prior()
         with tf.variable_scope('encoder'):
             self._build_encoder()
         with tf.variable_scope('embedding'):
@@ -144,14 +118,7 @@ class VQVAE(object):
 
 
     def build_generator(self):
-        # self._build_prior()
         self._build()
         with tf.variable_scope('decoder'):
             self._build_decoder_generator()
-
-
-    def encode(self, sess, x, h):
-        result = sess.run(self.encoding, {self.x: x, self.h: h})
-        self._print('encoding shape:', result)
-        return result
 

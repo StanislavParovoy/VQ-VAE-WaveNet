@@ -7,7 +7,7 @@ import json
 class Wavenet():
 
 
-    def __init__(self, args_file='wavenet.json'):
+    def __init__(self, args_file='wavenet_parameters.json'):
         with open(args_file) as file:
             args = json.load(file)
         assert len(args['dilation_rates']) == args['num_cycles'] * args['num_cycle_layers']
@@ -34,9 +34,7 @@ class Wavenet():
         print('wavenet inputs:', inputs.shape)
         
         # [-1, 1] -> [0, 255]
-        # can also use all, that needs to front pad inputs with receptive_field many 0s
         mu = self.args['quantization_channels'] - 1
-        # labels = inputs[:, self.receptive_field:, :]
         labels = tf.cast((inputs + 1) / 2 * mu + 0.5, tf.int32)
         self.labels = tf.reshape(labels, [-1])
 
@@ -49,7 +47,6 @@ class Wavenet():
             print('net preprocess:', net.shape)
 
         if local_condition is not None:
-            # local_condition = local_condition[:, args['kernel_size'] - 1:, :]
             print('local_condition:', local_condition.shape)
         if global_condition is not None:
             print('global_condition:', global_condition.shape)
@@ -70,27 +67,15 @@ class Wavenet():
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
                 print('dr_%d: res_out: ' % dilations, end='')
-                # start = ((kernel_size - 1) * dilations)
-                # if local_condition is not None:
-                    # local_condition = local_condition[:, start:, :]
 
                 skip_out, res_out = residual_stack(net, \
                     dilation_filters, kernel_size, dilations, \
                     skip_filters, residual_filters, \
                     local_condition, global_condition)
 
-                # skip = skip[:, start:, :] + skip_out
-                # net = net[:, start:, :] + res_out
                 skip += skip_out
                 net += res_out
-                if local_condition is not None:
-                    lol = local_condition.shape
-                    print(res_out.shape, '   skip_out:', skip_out.shape, '   local:', lol)
-                else:
-                    print(res_out.shape, '   skip_out:', skip_out.shape)
 
-        # the last prediction saw sample at t, but no label at t+1
-        # net = skip[:, :-1, :]
         net = skip
         print('skip sum:', net.shape)
 
@@ -103,7 +88,6 @@ class Wavenet():
             # add condition
             if local_condition is not None:
                 with tf.variable_scope('local_condition'):
-                    # local_condition = local_condition[:, :-1, :]
                     net = add_condition(net, local_condition)
                 with tf.variable_scope('global_condition'):
                     net = add_condition(net, global_condition)
@@ -121,7 +105,7 @@ class Wavenet():
 
     def build_generator(self, input_t, local_condition_t, global_condition_t,
         batch_size=1, verbose=False):
-        '''performs the fast wavenet generation for one step
+        ''' performs the fast wavenet generation for one step
         args:
             input_t: initial value (at first time stamp)
             condition_t: initial value of condition_t (at first time stamp)
@@ -232,13 +216,12 @@ class Wavenet():
         #                     decay_steps=10000,
         #                     decay_rate=0.96)
         learning_rate_schedule = {
-                0: 1e-4,
-                90000: 2e-4 / 3,
-                120000: 6e-5,
-                150000: 4e-5,
-                180000: 2e-5,
-                210000: 6e-6,
-                240000: 2e-6,
+            0: 0.0001,
+            30000: 0.00008,
+            40000: 0.00006,
+            60000: 0.00004,
+            80000: 0.00002,
+            100000: 0.00001
         }
         self.lr = tf.constant(learning_rate_schedule[0])
         for key, value in learning_rate_schedule.iteritems():

@@ -4,7 +4,7 @@ from Decoder.decoder import *
 from dataset import *
 from utils import display_time
 import tensorflow as tf
-import time, os, sys
+import time, os, sys, json
 from argparse import ArgumentParser
 
 if tf.__version__ == '1.14.0':
@@ -40,6 +40,9 @@ parser.add_argument('-restore',
 parser.add_argument('-save', default='saved_vqvae/weights', 
                     dest='save_path', metavar='string',
                     help='path to save weights')
+parser.add_argument('-params', default='parameters.json',
+                    dest='parameters', metavar='str',
+                    help='path to parameters file')
 args = parser.parse_args()
 
 dataset_args = {
@@ -61,34 +64,28 @@ if args.encoder in encoders:
     encoder = encoders[args.encoder]()
 else:
     raise NotImplementedError("encoder %s not implemented" % args.encoder)
-wavenet_args_path = 'wavenet.json'
-decoder = WavenetDecoder(wavenet_args_path)
 
+with open(args.parameters) as file:
+    parameters = json.load(file)
+decoder = WavenetDecoder(parameters['wavenet_parameters'])
 model_args = {
     'x': dataset.x,
     'speaker': dataset.y,
     'encoder': encoder,
     'decoder': decoder,
-    'latent_dim': 64,
-    'k': 512, 
-    'beta': 0.25,
-    'verbose': False
+    'latent_dim': parameters['latent_dim'],
+    'k': parameters['k'],
+    'beta': parameters['beta'],
+    'verbose': parameters['verbose']
 }
 
-learning_rate_schedule = {
-    0: 0.0002,
-    30000: 0.0001,
-    60000: 0.00008,
-    80000: 0.00004,
-    100000: 0.00002,
-    120000: 0.00001
-}
+learning_rate_schedule = {int(k): v for k, v in parameters.learning_rate_schedule.items()}
 
 model = VQVAE(model_args)
 model.build(learning_rate_schedule=learning_rate_schedule)
 
 sess = tf.Session()
-writer = tf.summary.FileWriter('logs_vqvae', sess.graph)
+writer = tf.summary.FileWriter(args.log, sess.graph)
 saver = tf.train.Saver()
 
 if args.restore_path is not None:
@@ -98,7 +95,7 @@ else:
 
 gs = sess.run(model.global_step)
 lr = sess.run(model.lr)
-print('last global step: %d, learning rate: %.8f' % (gs, lr))
+print('[restore] last global step: %d, learning rate: %.8f' % (gs, lr))
 
 save_path = args.save_path
 save_dir, save_name = save_path.split('/')
@@ -122,7 +119,7 @@ for e in range(args.num_epochs):
             writer.add_summary(summary, gs)
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [recons %.5f] [vq %.5f] [commit %.5f] [lr %.8f]' % (rl, vl, cl, lr)
+            loss = ' [recons %.5f] [vq %.5f] [commit %.5f] [lr %.5f]' % (rl, vl, cl, lr)
             second = (num_batches - step) * t
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:
