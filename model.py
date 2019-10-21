@@ -9,7 +9,6 @@ class VQVAE(object):
         self.h = args['speaker']
         self.encoder = args['encoder']
         self.decoder = args['decoder']
-        self.latent_dim = args['latent_dim']
         self.k = args['k']
         self.beta = args['beta']
         self._print = lambda s, t: print(s, t.shape) if args['verbose'] else None
@@ -25,8 +24,9 @@ class VQVAE(object):
 
 
     def _build_embedding_space(self):
+        latent_dim = self.z_e.get_shape().as_list()[-1]
         self.embedding = tf.get_variable(name='embedding', 
-                                         shape=[self.k, self.latent_dim], 
+                                         shape=[self.k, latent_dim], 
                                          regularizer=tf.keras.regularizers.l2(1e-5),
                                          initializer=tf.uniform_unit_scaling_initializer())
         self._print('embedding:', self.embedding)
@@ -57,13 +57,14 @@ class VQVAE(object):
         self._print('labels:', self.labels)
 
 
-    def _build_decoder_generator(self):
+    def _build_decoder_generator(self, batch_size):
         input_t = tf.placeholder(tf.float32, [None, 1])
         channels = self.z_q.shape.as_list()[-1]
         local_condition_t = tf.placeholder(tf.float32, [None, channels])
         self.decoder.build_generator(input_t=input_t,
                                      local_condition_t=local_condition_t,
-                                     global_condition_t=self.h)
+                                     global_condition_t=self.h,
+                                     batch_size=batch_size)
 
 
     def _compute_loss(self):
@@ -117,8 +118,8 @@ class VQVAE(object):
         self._build_optimiser(learning_rate_schedule)
 
 
-    def build_generator(self):
+    def build_generator(self, batch_size):
         self._build()
         with tf.variable_scope('decoder'):
-            self._build_decoder_generator()
+            self._build_decoder_generator(batch_size)
 

@@ -61,9 +61,9 @@ def strided_conv_4_768(net, relu='relu'):
     return net    
 
 
-def linear_64(net):
+def linear_64(net, filters=64):
     # using a 1x1 conv to downsample
-    net = tkl.Conv1D(filters=64,
+    net = tkl.Conv1D(filters=filters,
                     kernel_size=1, 
                     strides=1,
                     padding='same')(net)
