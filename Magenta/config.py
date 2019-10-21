@@ -139,11 +139,11 @@ class Config(object):
   def __init__(self):
     self.learning_rate_schedule = {
         0: 0.0001,
-        30000: 0.00008,
-        60000: 0.00006,
-        80000: 0.00004,
-        100000: 0.00002,
-        120000: 0.00001
+        60000: 0.00008,
+        80000: 0.00006,
+        100000: 0.00004,
+        120000: 0.00002,
+        140000: 0.00001
     }
     self.ae_hop_length = 64
 
@@ -190,8 +190,6 @@ class Config(object):
     x_quantized = mu_law(x)
     x_scaled = x_quantized # [-1, 1]
     print('x:', x.shape)
-    print('x_quantized:', x_quantized.shape)
-    print('x_scaled:', x_scaled.shape)
 
     ###
     # The Non-Causal Temporal Encoder.
@@ -241,8 +239,8 @@ class Config(object):
     self.embedding = tf.get_variable(name='embedding', 
                                  # initializer = tf.eye(self.latent_dim))
                                  shape=[self.k, self.latent_dim], 
-                                 initializer=tf.initializers.orthogonal(gain=1.0),
-                                 # initializer=tf.uniform_unit_scaling_initializer(),
+                                 # initializer=tf.initializers.orthogonal(gain=1.0),
+                                 initializer=tf.uniform_unit_scaling_initializer(),
                                  regularizer=tf.keras.regularizers.l2(decay))
     expanded_ze = tf.expand_dims(z_e, -2)
     distances = tf.reduce_sum((expanded_ze - self.embedding) ** 2, axis=-1)
@@ -268,7 +266,7 @@ class Config(object):
     ###
     # The WaveNet Decoder.
     ###
-    # l = x_scaled
+
     l = shift_right(x_scaled if rescale_inputs else x)
     l = conv1d(
         l,

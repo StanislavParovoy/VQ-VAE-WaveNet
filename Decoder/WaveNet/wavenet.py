@@ -14,11 +14,11 @@ class Wavenet():
 
         kernel_size = args['kernel_size']
         self.receptive_field = sum(args['dilation_rates']) * (kernel_size - 1) + 1
-        print('receptive_field:', self.receptive_field)
         self.receptive_field += args['preprocess']['kernel_size'] - 1
-        print('receptive_field after preprocess:', self.receptive_field)
 
         self.args = args
+        self._print = lambda s, t: print(s, t) if args['verbose'] else None
+        self._print('wavenet receptive_field:', self.receptive_field)
 
 
     def build(self, inputs, local_condition=None, global_condition=None):
@@ -31,7 +31,7 @@ class Wavenet():
         '''
 
         inputs = mu_law_encode(inputs)
-        print('wavenet inputs:', inputs.shape)
+        self._print('wavenet inputs:', inputs.shape)
         
         # [-1, 1] -> [0, 255]
         mu = self.args['quantization_channels'] - 1
@@ -44,17 +44,17 @@ class Wavenet():
         with tf.variable_scope('preprocess'):
             args = self.args['preprocess']
             net = conv1d_v2(inputs, args['filters'], args['kernel_size'])
-            print('net preprocess:', net.shape)
+            self._print('net preprocess:', net.shape)
 
         if local_condition is not None:
-            print('local_condition:', local_condition.shape)
+            self._print('local_condition:', local_condition.shape)
         if global_condition is not None:
-            print('global_condition:', global_condition.shape)
+            self._print('global_condition:', global_condition.shape)
 
         # skip starts from preprocess
         with tf.variable_scope('skip'):
             skip = conv1d_v2(net, self.args['skip_filters'], kernel_size=1)
-            print('skip start:', skip.shape)
+            self._print('skip start:', skip.shape)
 
         # residual stacks
         kernel_size = self.args['kernel_size']
@@ -66,8 +66,6 @@ class Wavenet():
             cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
-                print('dr_%d: res_out: ' % dilations, end='')
-
                 skip_out, res_out = residual_stack(net, \
                     dilation_filters, kernel_size, dilations, \
                     skip_filters, residual_filters, \
@@ -75,15 +73,16 @@ class Wavenet():
 
                 skip += skip_out
                 net += res_out
+                self._print('net_dr_%d:' % dilations, net.shape)
 
         net = skip
-        print('skip sum:', net.shape)
+        self._print('skip sum:', net.shape)
 
         # postprocess layer 1 with condition
         with tf.variable_scope('postprocess1'):
             net = tf.nn.relu(net)
             net = conv1d_v2(net, self.args['skip_filters'], kernel_size=1)
-            print('net postprocess 1:', net.shape)
+            self._print('net postprocess 1:', net.shape)
 
             # add condition
             if local_condition is not None:
@@ -91,20 +90,19 @@ class Wavenet():
                     net = add_condition(net, local_condition)
                 with tf.variable_scope('global_condition'):
                     net = add_condition(net, global_condition)
-                print('net postprocess 1 condition:', net.shape)
+                self._print('net postprocess 1 condition:', net.shape)
 
         # postprocess layer 2, outputs logits
         with tf.variable_scope('postprocess2'):
             net = tf.nn.relu(net)
             net = conv1d_v2(net, self.args['quantization_channels'], kernel_size=1)
-            print('net postprocess 2:', net.shape)
+            self._print('net postprocess 2:', net.shape)
 
         self.logits = tf.reshape(net, [-1, self.args['quantization_channels']])
         return self.logits, self.labels
 
 
-    def build_generator(self, input_t, local_condition_t, global_condition_t,
-        batch_size=1, verbose=False):
+    def build_generator(self, input_t, local_condition_t, global_condition_t, batch_size):
         ''' performs the fast wavenet generation for one step
         args:
             input_t: initial value (at first time stamp)
@@ -132,8 +130,6 @@ class Wavenet():
         with tf.variable_scope('preprocess'):
             args = self.args['preprocess']
             current = fast_conv1d(past, input_t, args['filters'], args['kernel_size'])
-            if verbose:
-                print('net preprocess:', current.shape)
 
         # skip starts from preprocess
         with tf.variable_scope('skip'):
@@ -163,21 +159,16 @@ class Wavenet():
                 skip_out, res_out = fast_residual_stack(past, current, state_size, \
                     kernel_size, local_condition_t, global_condition_t, \
                     skip_filters, residual_filters)
-                if verbose:
-                    print('skip:', skip_out.shape, '   res:', res_out.shape)
+
                 skip += skip_out
                 current += res_out
 
         net = skip
-        if verbose:
-            print('sum skip:', net.shape)
 
         # postprocess layer 1 with condition
         with tf.variable_scope('postprocess1'):
             net = tf.nn.relu(net)
             net = linear(net, self.args['skip_filters'])
-            if verbose:
-                print('net postprocess 1:', net.shape)
 
             # # add condition
             if local_condition_t is not None:
@@ -185,15 +176,11 @@ class Wavenet():
                     net = fast_condition(net, local_condition_t)
                 with tf.variable_scope('global_condition'):
                     net = fast_condition(net, global_condition_t)
-                if verbose:
-                    print('net postprocess 1 condition:', net.shape)
 
         # # postprocess layer 2, outputs logits
         with tf.variable_scope('postprocess2'):
             net = tf.nn.relu(net)
             net = linear(net, self.args['quantization_channels'])
-            if verbose:
-                print('net postprocess 2:', net.shape)
 
         self.init_ops = init_ops
         self.push_ops = push_ops

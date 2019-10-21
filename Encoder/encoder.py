@@ -6,11 +6,11 @@ tkl = tf.keras.layers
 
 
 class Encoder_64():
-    def __init(self):
+    def __init__(self, latent_dim):
         super(Encoder_64, self).__init__()
+        self.latent_dim = latent_dim
 
     def build(self, net):
-        latent_dim = 512
         net = mu_law_encode(net)
         for i in range(6):
             net = tkl.Conv1D(filters=768,
@@ -18,14 +18,18 @@ class Encoder_64():
                             strides=2,
                             padding='same',
                             activation='relu')(net)
-        net = tkl.Conv1D(filters=latent_dim, kernel_size=1, strides=1, padding='valid')(net)
+        net = tkl.Conv1D(filters=self.latent_dim, 
+                         kernel_size=1, 
+                         strides=1, 
+                         padding='valid')(net)
         print('en:', net.shape)
         return net
 
 
 class Encoder_Magenta():
-    def __init__(self):
-        super(Encoder_64, self).__init__()
+    def __init__(self, latent_dim):
+        super(Encoder_Magenta, self).__init__()
+        self.latent_dim = latent_dim
         self.args = {}
         self.args['dilation_rates'] = [1,2,4,8,16,32,64,128,256,512,
                                        1,2,4,8,16,32,64,128,256,512,
@@ -36,7 +40,6 @@ class Encoder_Magenta():
     def build(self, net):
         filters = 128
         kernel_size = 3
-        latent_dim = 64
         hop_length = 256
 
         net = mu_law_encode(net)
@@ -57,15 +60,16 @@ class Encoder_Magenta():
                 with tf.variable_scope('residual'):
                     en = en + conv1d_v2(d, filters, 1, 'VALID')
         with tf.variable_scope('postprocess'):
-            en = conv1d_v2(en, latent_dim, 1, 'VALID')
+            en = conv1d_v2(en, self.latent_dim, 1, 'VALID')
             en = pool1d(en, hop_length)
         print('en:', en.shape)
         return en
 
 
-class Encoder2019():
-    def __init__(self):
-        super(Encoder2019, self).__init__()
+class Encoder_2019():
+    def __init__(self, latent_dim):
+        super(Encoder_2019, self).__init__()
+        self.latent_dim = latent_dim
 
         
     def build(self, net):
@@ -92,7 +96,7 @@ class Encoder2019():
             net = relu + relu
 
         # downsample to 64D to match embedding dimension in VQ-VAE
-        net = linear_64(net)
+        net = linear_64(net, filters=self.latent_dim)
 
         return net
     

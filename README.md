@@ -43,7 +43,8 @@ Download data and put the unzipped folders 'VCTK-Corpus' or 'LibriSpeech' in the
 To train from custom datasets, refer to `dataset.py` for making iterators.
 
 example usage: 
-`python3 train.py VCTK -m 0 -l 5120 -b 4 -e 1 -en Magenta -log logs -save saved_model/weights`
+
+`python3 train.py VCTK -m 0 -l 5120 -b 4 -e 1 -en Magenta -params model_parameters.json -log logs -save saved_model/weights`
 - `-m` whether load data into memory or use tf io
 - `-l` length of segment to use in training
 - `-b` batch size
@@ -52,9 +53,6 @@ example usage:
 - `-restore` resume from (e.g. `saved_model/weights-11064`)
 - `-save` save to (e.g. `saved_model/weights`)
 - `log` save logs for tensorboard
-- `-k` number of embedding vectors
-- `-ld` size of each embedding vector
-- `-beta` weight on commitment loss
 
 ### Generation
 
@@ -65,7 +63,7 @@ example usage:
 - `-restore` restore trained model
 - `-audio` which audio to use as local condition
 - `-speakers` which speaker(s) to use as global condition
-- `-mode` method to sample from predicted quantised distribution (`sample` or `greedy`)
+- `-mode` method to sample from predicted quantised distribution (`sample`, `greedy`)
 - `-save` where to save generated audio
 
 ### TODO

@@ -31,22 +31,22 @@ parser.add_argument('-b', default=4, type=int,
 parser.add_argument('-en', default='Magenta',
                     dest='encoder', metavar='string',
                     help='encoder name')
-parser.add_argument('-log', default='log_vqvae', 
+parser.add_argument('-log', default='logs', 
                     dest='log_path', metavar='string',
                     help='path to save logs for tensorboard')
 parser.add_argument('-restore',
                     dest='restore_path', metavar='string',
                     help='path to restore weights')
-parser.add_argument('-save', default='saved_vqvae/weights', 
+parser.add_argument('-save', default='saved_model/weights', 
                     dest='save_path', metavar='string',
                     help='path to save weights')
-parser.add_argument('-params', default='parameters.json',
-                    dest='parameters', metavar='str',
+parser.add_argument('-params', default='model_parameters.json',
+                    dest='parameter_path', metavar='str',
                     help='path to parameters file')
 args = parser.parse_args()
 
 dataset_args = {
-    'relative_path': 'data/',
+    'relative_path': '../data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
     'max_len': args.max_len,
@@ -59,33 +59,32 @@ elif args.dataset == 'LibriSpeech':
     dataset = LibriSpeech(**dataset_args)
 num_batches = dataset.num_batches
 
+
+with open(args.parameter_path) as file:
+    parameters = json.load(file)
 encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
 if args.encoder in encoders:
-    encoder = encoders[args.encoder]()
+    encoder = encoders[args.encoder](parameters['latent_dim'])
 else:
     raise NotImplementedError("encoder %s not implemented" % args.encoder)
-
-with open(args.parameters) as file:
-    parameters = json.load(file)
 decoder = WavenetDecoder(parameters['wavenet_parameters'])
 model_args = {
     'x': dataset.x,
     'speaker': dataset.y,
     'encoder': encoder,
     'decoder': decoder,
-    'latent_dim': parameters['latent_dim'],
     'k': parameters['k'],
     'beta': parameters['beta'],
     'verbose': parameters['verbose']
 }
 
-learning_rate_schedule = {int(k): v for k, v in parameters.learning_rate_schedule.items()}
+schedule = {int(k): v for k, v in parameters['learning_rate_schedule'].items()}
 
 model = VQVAE(model_args)
-model.build(learning_rate_schedule=learning_rate_schedule)
+model.build(learning_rate_schedule=schedule)
 
 sess = tf.Session()
-writer = tf.summary.FileWriter(args.log, sess.graph)
+writer = tf.summary.FileWriter(args.log_path, sess.graph)
 saver = tf.train.Saver()
 
 if args.restore_path is not None:
@@ -119,7 +118,7 @@ for e in range(args.num_epochs):
             writer.add_summary(summary, gs)
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [recons %.5f] [vq %.5f] [commit %.5f] [lr %.5f]' % (rl, vl, cl, lr)
+            loss = ' [rec %.5f] [vq %.5f] [cmt %.5f] [lr %.5f]' % (rl, vl, cl, lr)
             second = (num_batches - step) * t
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:

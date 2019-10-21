@@ -49,22 +49,26 @@ for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)
 
-wavenet_args_path = 'wavenet.json'
-encoder = Encoder_Magenta()
-decoder = WavenetDecoder(wavenet_args_path)
+with open(args.parameter_path) as file:
+    parameters = json.load(file)
+encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
+if args.encoder in encoders:
+    encoder = encoders[args.encoder](parameters['latent_dim'])
+else:
+    raise NotImplementedError("encoder %s not implemented" % args.encoder)
+decoder = WavenetDecoder(parameters['wavenet_parameters'])
 model_args = {
     'x': wav,
     'speaker': tf.constant(speaker),
     'encoder': encoder,
     'decoder': decoder,
-    'latent_dim': 64,
-    'k': 512, 
-    'beta': 0.25,
-    'verbose': False
+    'k': parameters['k'],
+    'beta': parameters['beta'],
+    'verbose': parameters['verbose']
 }
 
 model = VQVAE(model_args)
-model.build_generator()
+model.build_generator(batch_size=batch_size)
 wavenet = model.decoder.wavenet
 
 sess = tf.Session()  
