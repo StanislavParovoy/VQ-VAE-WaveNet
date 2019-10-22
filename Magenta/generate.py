@@ -39,6 +39,8 @@ content = tf.io.read_file(args.audio_path)
 wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
 wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
 wav = tf.tile(wav, [batch_size, 1, 1])
+sess = tf.Session()  
+wav = tf.constant(sess.run(wav))
 
 speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
 speaker = [[0] * 109] * len(args.speakers)
@@ -54,12 +56,11 @@ generator = FastGenerationConfig(batch_size=batch_size)
 x_t = tf.placeholder(tf.float32, shape=[batch_size, 1])
 net = generator.build(inputs=x_t, gc=gc)
 
-sess = tf.Session()  
 saver = tf.train.Saver(generator.shadow)
 saver.restore(sess, args.restore_path)
 
 encoding = sess.run(config.encoding)
-length = sess.run(wav).shape[1]
+length = wav.get_shape().as_list()[1]
 print('embedding:')
 emb = sess.run(config.embedding)
 print(emb)
@@ -69,7 +70,7 @@ audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(net['init_ops'])
 
-ratio = length // encoding.shape[0]
+ratio = length // encoding.shape[1]
 for i in tqdm(range(length)):
     probs, _ = sess.run([net['predictions'], net['push_ops']], 
         {x_t: audio, net['encoding']: encoding[:, i // ratio]})

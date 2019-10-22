@@ -27,9 +27,6 @@ parser.add_argument('-speakers',
                     nargs='+',
                     dest='speakers',
                     help='speaker id')
-parser.add_argument('-ratio', default=64, type=int, 
-                    dest='ratio',
-                    help='local condition ratio')
 parser.add_argument('-mode', default='sample', 
                     dest='mode',
                     help='decode mode, sample or greedy')
@@ -40,7 +37,7 @@ batch_size = len(args.speakers)
 
 content = tf.io.read_file(args.audio_path)
 wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
-wav = tf.reshape(wav[:tf.shape(wav)[0] // args.ratio * args.ratio, :], [1, -1, 1])
+wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
 wav = tf.tile(wav, [batch_size, 1, 1])
 
 speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
@@ -85,9 +82,11 @@ print(emb)
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(wavenet.init_ops)
+
+ratio = length // encoding.shape[1]
 for i in tqdm(range(length)):
     probs, _ = sess.run([wavenet.predictions, wavenet.push_ops], 
-        {wavenet.input_t: audio, wavenet.local_condition_t: encoding[:, i // args.ratio]})
+        {wavenet.input_t: audio, wavenet.local_condition_t: encoding[:, i // ratio]})
     decoded = decode(probs, mode=args.mode)
     to_write[:, i] = decoded
     audio = decoded.reshape([batch_size, 1])
