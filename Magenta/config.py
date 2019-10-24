@@ -1,17 +1,19 @@
 from masked import *
 import tensorflow as tf
 
-decay=1e-5
+decay=1e-8
 num_stages = 10
 num_layers = 50
 filter_length = 2
 width = 256
 skip_width = 512
 ae_num_stages = 10
-ae_num_layers = 8
-ae_filter_length = 16
-ae_width = 256
-ae_bottleneck_width = 256
+ae_num_layers = 6
+initial_filter = 1
+ae_filter_length = 5
+ae_width = 128
+ae_bottleneck_width = 64
+k = 512
 
 class FastGenerationConfig(object):
   def __init__(self, batch_size=1):
@@ -32,6 +34,10 @@ class FastGenerationConfig(object):
 
   def build(self, inputs, gc):
 
+    gc = tf.argmax(gc, axis=-1)
+    self.speaker_emb = tf.get_variable(name='speaker_emb', shape=[109, ae_bottleneck_width])
+    gc = tf.nn.embedding_lookup(self.speaker_emb, gc)
+
     # Encode the source with 8-bit Mu-Law.
     x = inputs
     batch_size = self.batch_size
@@ -39,8 +45,6 @@ class FastGenerationConfig(object):
     x_scaled = x_quantized
 
     print('x:', x.shape)
-    print('x_quantized:', x_quantized.shape)
-    print('x_scaled:', x_scaled.shape)
 
     encoding = tf.placeholder(
         name='encoding', shape=[batch_size, ae_bottleneck_width], dtype=tf.float32)
@@ -120,9 +124,9 @@ class FastGenerationConfig(object):
     logits = tf.reshape(logits, [-1, 256])
     probs = tf.nn.softmax(logits, name='softmax')
 
-    ema = tf.train.ExponentialMovingAverage(decay=0.9996)
-    trainable_variables = tf.trainable_variables()
-    self.shadow = {ema.average_name(v): v for v in trainable_variables}
+#     ema = tf.train.ExponentialMovingAverage(decay=0.9996)
+#     trainable_variables = tf.trainable_variables()
+#     self.shadow = {ema.average_name(v): v for v in trainable_variables}
 
     return {
         'init_ops': init_ops,
@@ -194,46 +198,58 @@ class Config(object):
     ###
     # The Non-Causal Temporal Encoder.
     ###
-
     en = conv1d(
          x_scaled if rescale_inputs else x,
          causal=False,
          num_filters=ae_width,
-         filter_length=ae_filter_length,
+         filter_length=initial_filter,
          name='ae_startconv',
+         regularizer=tf.keras.regularizers.l2(decay),
          is_training=True)
-
+    
     for num_layer in range(ae_num_layers):
-      dilation = 2**(num_layer % ae_num_stages)
-      d = tf.nn.relu(en)
-      d = conv1d(
-          d,
-          causal=False,
-          num_filters=ae_width,
-          filter_length=ae_filter_length,
-          dilation=dilation,
-          name='ae_dilatedconv_%d' % (num_layer + 1),
-          is_training=True)
-      d = tf.nn.relu(d)
-      en += conv1d(
-            d,
-            num_filters=ae_width,
-            filter_length=1,
-            name='ae_res_%d' % (num_layer + 1),
-            is_training=True)
-
+        dilation = 2**(num_layer % ae_num_stages)
+        dilation = 1
+        conv = conv1d(
+               en,
+               causal=False,
+               num_filters=ae_width,
+               filter_length=ae_filter_length,
+               dilation=dilation,
+               name='ae_dilatedconv_%d' % (num_layer + 1),
+               regularizer=tf.keras.regularizers.l2(decay),
+               is_training=True)
+        gate = conv1d(
+               en,
+               causal=False,
+               num_filters=ae_width,
+               filter_length=ae_filter_length,
+               dilation=dilation,
+               name='ae_dilatedgate_%d' % (num_layer + 1),
+               regularizer=tf.keras.regularizers.l2(decay),
+               is_training=True)
+        d = tf.nn.tanh(conv) * tf.nn.sigmoid(gate)
+        en += conv1d(
+              d,
+              num_filters=ae_width,
+              filter_length=1,
+              name='ae_res_%d' % (num_layer + 1),
+              regularizer=tf.keras.regularizers.l2(decay),
+              is_training=True)
+        en = pool1d(en, 2, name='ae_pool_%d' % (num_layer + 1), mode='avg')
     en = conv1d(
          en,
          num_filters=ae_bottleneck_width,
          filter_length=1,
          name='ae_bottleneck',
+         regularizer=tf.keras.regularizers.l2(decay),
          is_training=True)
-    en = pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
+#     en = pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
     self.encoding = en
-
     print('en:', en.shape)
+    
 #     '''
-    self.k = 512
+    self.k = k
     self.latent_dim = ae_bottleneck_width
     z_e = en
     self.embedding = tf.get_variable(name='embedding', 
@@ -250,17 +266,24 @@ class Config(object):
     en = z_q
     self.encoding = e_k
 
-#     self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
-#     tf.summary.scalar('vq_loss', self.vq_loss)
-    self.vq_loss = 0
+    self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
+    tf.summary.scalar('vq_loss', self.vq_loss)
+#     self.vq_loss = 0
 
-    self.commitment_loss = 0.2 * tf.reduce_mean((z_e - e_k) ** 2)
+    self.commitment_loss = 0.25 * tf.reduce_mean((z_e - tf.stop_gradient(e_k)) ** 2)
     tf.summary.scalar('commitment_loss', self.commitment_loss)
 #     '''
 #     self.commitment_loss, self.vq_loss = 0, 0
 
     if not is_training:
       return e_k
+
+    gc = tf.argmax(gc, axis=-1)
+    self.speaker_emb = tf.get_variable(name='speaker_emb', 
+                             shape=[109, ae_bottleneck_width], 
+                             dtype=tf.float32,
+                             initializer=tf.uniform_unit_scaling_initializer(1.0))
+    gc = tf.nn.embedding_lookup(self.speaker_emb, gc)
     print('gc:', gc.shape) # [b, 1]
 
     ###
@@ -380,15 +403,15 @@ class Config(object):
     for key, value in self.learning_rate_schedule.items():
       self.lr = tf.cond(
         tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
-    opt = tf.train.AdamOptimizer(self.lr, beta1=0.5, beta2=0.999).minimize(
+    self.opt = tf.train.AdamOptimizer(self.lr, beta1=0.5, beta2=0.999).minimize(
       self.loss, global_step=self.global_step)
 
-    ema = tf.train.ExponentialMovingAverage(decay=0.995)
-    trainable_variables = tf.trainable_variables()
-    self.variables = {ema.average_name(v): v for v in trainable_variables}
-    self.variables[self.global_step.name] = self.global_step
-    with tf.control_dependencies([opt]):
-      self.opt = ema.apply(trainable_variables)
+#     ema = tf.train.ExponentialMovingAverage(decay=0.995)
+#     trainable_variables = tf.trainable_variables()
+#     self.variables = {ema.average_name(v): v for v in trainable_variables}
+#     self.variables[self.global_step.name] = self.global_step
+#     with tf.control_dependencies([opt]):
+#       self.opt = ema.apply(trainable_variables)
 
     self.summary = tf.summary.merge_all()
 

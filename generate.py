@@ -73,11 +73,10 @@ saver = tf.train.Saver()
 saver.restore(sess, args.restore_path)
 
 encoding = sess.run(model.z_q)
-print('running encoding:', encoding.shape)
 length = sess.run(wav).shape[1]
-print('embedding:')
-emb = sess.run(model.embedding)
-print(emb)
+
+embedding = sess.run(model.embedding)
+np.save('embedding_%d.npy'%gs, embedding)
 
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
