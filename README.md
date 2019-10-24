@@ -50,7 +50,7 @@ example usage:
 - `-b` batch size
 - `-e` number of epochs
 - `-en` encoder id (`Magenta`, `64`, `2019`)
-- `-restore` resume from (e.g. `saved_model/weights-11064`)
+- `-restore` resume from (e.g. `saved_model/weights-110640`)
 - `-save` save to (e.g. `saved_model/weights`)
 - `log` save logs for tensorboard
 
@@ -59,16 +59,25 @@ example usage:
 Implements fast generation; starts from zeros.
 
 example usage:
-`python3 generate.py -restore saved_model/weights-11064 -audio ../p225_001.wav -speakers p225 p243 p292 -mode sample -save generated `
+`python3 generate.py -restore saved_model/weights-110640 -audio ../p225_001.wav -speakers p225 p243 p292 -mode sample -save generated `
 - `-restore` restore trained model
 - `-audio` which audio to use as local condition
 - `-speakers` which speaker(s) to use as global condition
 - `-mode` method to sample from predicted quantised distribution (`sample`, `greedy`)
 - `-save` where to save generated audio
 
+### Visualisation
+
+For now it saves the trained vq embedding space, and visualises through http://projector.tensorflow.org
+
+example usage:
+`python3 visualise.py -embedding embedding_110640.npy -save embeddings`
+then upload tsv files in folder `embeddings` to the website.
+
 ### TODO
+- [ ] Add control for whether use vq or not
+- [ ] Add control for whether use speaker embedding or just one hot
 - [ ] Tune
-- [ ] Add visualisation of learnt vq
 - [ ] Train a prior based on vq
 
 ### Alternative Implementation

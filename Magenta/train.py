@@ -29,13 +29,13 @@ parser.add_argument('-e', default=1, type=int,
 parser.add_argument('-b', default=4, type=int,
                     dest='batch_size', metavar='int',
                     help='batch size')
-parser.add_argument('-log',
+parser.add_argument('-log', default='logs',
                     dest='log_path', metavar='string',
                     help='path to save logs for tensorboard')
-parser.add_argument('-restore', 
+parser.add_argument('-restore',
                     dest='restore_path', metavar='string',
                     help='path to restore weights')
-parser.add_argument('-save',
+parser.add_argument('-save', default='saved_model/weights',
                     dest='save_path', metavar='string',
                     help='path to save weights')
 args = parser.parse_args()
@@ -57,18 +57,19 @@ num_batches = dataset.num_batches
 model = Config()
 model.build(inputs=dataset.x, gc=dataset.y, is_training=True)
 sess = tf.Session()
-sess.run(tf.global_variables_initializer())
 
 writer = tf.summary.FileWriter(args.log_path, sess.graph)
-saver = tf.train.Saver(model.variables)
+# saver = tf.train.Saver(model.variables)
+saver = tf.train.Saver()
 
 if args.restore_path is not None:
     saver.restore(sess, args.restore_path)
 else:
     sess.run(tf.global_variables_initializer())
+
 gs = sess.run(model.global_step)
 lr = sess.run(model.lr)
-print('[restore] last global step: %d, learning rate: %.8f' % (gs, lr))
+print('last global step: %d, learning rate: %.5f' % (gs, lr))
 
 save_path = args.save_path
 save_dir, save_name = save_path.split('/')
@@ -90,7 +91,7 @@ for e in range(args.num_epochs):
             writer.add_summary(summary, gs)
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [loss %.5f] [lr %.5f]' % (l, lr)
+            loss = ' [loss %.5f] [lr %.7f]' % (l, lr)
             second = (num_batches - step) * t
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:

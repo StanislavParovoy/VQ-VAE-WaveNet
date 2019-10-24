@@ -56,21 +56,26 @@ generator = FastGenerationConfig(batch_size=batch_size)
 x_t = tf.placeholder(tf.float32, shape=[batch_size, 1])
 net = generator.build(inputs=x_t, gc=gc)
 
-saver = tf.train.Saver(generator.shadow)
+# saver = tf.train.Saver(generator.shadow)
+saver = tf.train.Saver()
 saver.restore(sess, args.restore_path)
 
 encoding = sess.run(config.encoding)
-length = wav.get_shape().as_list()[1]
-print('embedding:')
+length = wav.shape.as_list()[1]
+print('saving embedding...')
 emb = sess.run(config.embedding)
-print(emb)
-print('running encoding:', encoding.shape)
+np.save('emb_%d.npy'%gs, emb)
+print('saving speaker embedding...')
+speaker_emb = sess.run(generator.speaker_emb)
+np.save('speaker_emb_%d.npy'%gs, speaker_emb)
+print('running encoding...', encoding.shape)
 
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(net['init_ops'])
 
 ratio = length // encoding.shape[1]
+print('ratio: %d'%ratio)
 for i in tqdm(range(length)):
     probs, _ = sess.run([net['predictions'], net['push_ops']], 
         {x_t: audio, net['encoding']: encoding[:, i // ratio]})
