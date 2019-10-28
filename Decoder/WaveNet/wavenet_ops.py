@@ -56,7 +56,7 @@ def causal_conv1d(net, weights, stride=1, padding='CAUSAL', dilations=1):
     return net
 
 
-def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1):
+def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=False):
     padding = padding.upper()
     if padding == 'CAUSAL':
         padding = 'VALID'
@@ -66,12 +66,15 @@ def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1):
                              shape=[kernel_size, in_channels, filters], 
                              dtype=tf.float32,
                              initializer=tf.uniform_unit_scaling_initializer(1.0),
-                             regularizer=None)
+                             regularizer=tf.keras.regularizers.l2(1e-5))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
                            initializer=tf.constant_initializer(0.0),
-                           regularizer=None)
+                           regularizer=tf.keras.regularizers.l2(1e-5))
+    if log:
+        tf.summary.histogram('_kernel', kernel)
+        tf.summary.histogram('_bias', bias)
 
     # in TF r1.14, arg 'dilations' is added to tf.nn.conv1d
     net = tf.pad(net, [[0, 0], [dilations * (kernel_size - 1), 0], [0, 0]])

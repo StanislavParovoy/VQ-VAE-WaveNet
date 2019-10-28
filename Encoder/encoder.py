@@ -31,7 +31,7 @@ class Encoder_Magenta():
         super(Encoder_Magenta, self).__init__()
         self.latent_dim = latent_dim
         self.args = {}
-        self.args['dilation_rates'] = [1, 2, 4, 8, 16, 16]
+        self.args['dilation_rates'] = [2, 2, 4, 8, 16, 16]
         self.args['num_cycles'] = 1
         self.args['num_cycle_layers'] = 6
 
@@ -42,22 +42,22 @@ class Encoder_Magenta():
         net = mu_law_encode(net)
 
         with tf.variable_scope('preprocess'):
-            en = conv1d_v2(net, filters, kernel_size, 'VALID', dilations=1)
+            en = conv1d_v2(net, filters, kernel_size, 'VALID', dilations=1, log=True)
 
         for i, dilations in enumerate(self.args['dilation_rates']):
             cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
                 with tf.variable_scope('dilated_gate'):
-                    g = conv1d_v2(en, filters, kernel_size, 'VALID', dilations)
+                    g = conv1d_v2(en, filters, kernel_size, 'VALID', dilations, log=True)
                 with tf.variable_scope('dilated_filter'):
-                    f = conv1d_v2(en, filters, kernel_size, 'VALID', dilations)
+                    f = conv1d_v2(en, filters, kernel_size, 'VALID', dilations, log=True)
                 d = tf.nn.tanh(g) * tf.nn.sigmoid(f)
                 with tf.variable_scope('residual'):
-                    en = en + conv1d_v2(d, filters, 1, 'VALID')
+                    en = en + conv1d_v2(d, filters, 1, 'VALID', log=True)
                 en = pool1d(en, 2)
         with tf.variable_scope('postprocess'):
-            en = conv1d_v2(en, self.latent_dim, 1, 'VALID')
+            en = conv1d_v2(en, self.latent_dim, 1, 'VALID', log=True)
         return en
 
 

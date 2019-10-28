@@ -1,5 +1,7 @@
 {
 
+"encoder": "Magenta",
+
 "k": 512,
 
 "latent_dim": 64,

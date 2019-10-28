@@ -26,9 +26,10 @@ class VQVAE(object):
     def _build_embedding_space(self):
         latent_dim = self.z_e.get_shape().as_list()[-1]
         self.embedding = tf.get_variable(name='embedding', 
-                                         shape=[self.k, latent_dim], 
-                                         regularizer=tf.keras.regularizers.l2(1e-5),
-                                         initializer=tf.uniform_unit_scaling_initializer())
+                                         initializer=tf.eye(latent_dim),
+                                         # shape=[self.k, latent_dim], 
+                                         # initializer=tf.uniform_unit_scaling_initializer(),
+                                         regularizer=tf.keras.regularizers.l2(1e-5))
         self._print('embedding:', self.embedding)
 
 
@@ -58,13 +59,12 @@ class VQVAE(object):
 
 
     def _build_decoder_generator(self, batch_size):
-        input_t = tf.placeholder(tf.float32, [None, 1])
+        input_t = tf.placeholder(tf.float32, [batch_size, 1])
         channels = self.z_q.shape.as_list()[-1]
-        local_condition_t = tf.placeholder(tf.float32, [None, channels])
+        local_condition_t = tf.placeholder(tf.float32, [batch_size, channels])
         self.decoder.build_generator(input_t=input_t,
                                      local_condition_t=local_condition_t,
-                                     global_condition_t=self.h,
-                                     batch_size=batch_size)
+                                     global_condition_t=self.h)
 
 
     def _compute_loss(self):
@@ -98,8 +98,8 @@ class VQVAE(object):
                 tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
 
         optimiser = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimiser.minimize(
-            self.reconstruction_loss + self.vq_loss + self.commitment_loss,
+        self.train_op = optimiser.minimize(self.reconstruction_loss + self.vq_loss \
+            + self.commitment_loss + self.regularisation_loss,
             global_step=self.global_step)
 
 
@@ -109,6 +109,7 @@ class VQVAE(object):
         with tf.variable_scope('embedding'):
             self._build_embedding_space()
             self._discretise()
+
 
     def build(self, learning_rate_schedule):
         self._build()

@@ -10,16 +10,16 @@ TensorFlow r1.12 / r1.14, numpy, librosa, scipy, tqdm
 
 #### Encoder
 There are 3 encoders implemented:
-- `Magenta` encoder from nsynth-magenta, non-causal wavenet alike (default)
+- `Magenta` encoder from nsynth-magenta, wavenet alike (default)
 - `2019` the one described in https://arxiv.org/abs/1901.08810
 - `64` 6 layers strided conv, as mentioned in original paper
 
-Parameters can be found in `Encoder/encoder.py`.
+Parameters can be found in `Encoder/encoder.py` and `model_parameters.json`.
 
 #### VQ
 
 There are 2 ways to train the embedding:
-- train $z_e$ and $e_k$ separately, as described in original paper
+- train $z_e$ and $e_k$ separately, as described in original paper (default)
 - train them together
 
 There are 2 ways to initialise the embedding:
@@ -44,22 +44,22 @@ To train from custom datasets, refer to `dataset.py` for making iterators.
 
 example usage: 
 
-`python3 train.py VCTK -m 0 -l 5120 -b 4 -e 1 -en Magenta -params model_parameters.json -log logs -save saved_model/weights`
+`python3 train.py VCTK -m 0 -l 5120 -b 4 -e 1 -params model_parameters.json -log logs -interval 100 -save saved_model/weights`
 - `-m` whether load data into memory or use tf io
 - `-l` length of segment to use in training
 - `-b` batch size
 - `-e` number of epochs
-- `-en` encoder id (`Magenta`, `64`, `2019`)
 - `-restore` resume from (e.g. `saved_model/weights-110640`)
+- `-log` path to save logs for tensorboard
+- `-interval` steps between each log written to disk
 - `-save` save to (e.g. `saved_model/weights`)
-- `log` save logs for tensorboard
 
 ### Generation
 
 Implements fast generation; starts from zeros.
 
 example usage:
-`python3 generate.py -restore saved_model/weights-110640 -audio ../p225_001.wav -speakers p225 p243 p292 -mode sample -save generated `
+`python3 generate.py -restore saved_model/weights-110640 -audio data/VCTK-Corpus/wav48/p225/p225_001.wav -speakers p225 p243 p292 -mode sample -save generated`
 - `-restore` restore trained model
 - `-audio` which audio to use as local condition
 - `-speakers` which speaker(s) to use as global condition
@@ -85,8 +85,8 @@ The folder `Magenta` contains an implementation that I collaged from 'official' 
 
 ### References
 
-https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py
-https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb
-https://github.com/tensorflow/magenta/tree/master/magenta/models/nsynth/wavenet
-https://github.com/ibab/tensorflow-wavenet
-https://github.com/JeremyCCHsu/vqvae-speech
+- https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py
+- https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb
+- https://github.com/tensorflow/magenta/tree/master/magenta/models/nsynth/wavenet
+- https://github.com/ibab/tensorflow-wavenet
+- https://github.com/JeremyCCHsu/vqvae-speech
