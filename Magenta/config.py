@@ -1,17 +1,17 @@
 from masked import *
 import tensorflow as tf
 
-decay=1e-8
+decay=1e-6
 num_stages = 10
 num_layers = 50
 filter_length = 2
 width = 256
 skip_width = 512
-ae_num_stages = 10
+ae_num_stages = 5
 ae_num_layers = 6
 initial_filter = 1
-ae_filter_length = 5
-ae_width = 128
+ae_filter_length = 3
+ae_width = 368
 ae_bottleneck_width = 64
 k = 512
 
@@ -20,6 +20,7 @@ class FastGenerationConfig(object):
     self.batch_size = batch_size
 
   def add_gc(self, net, gc, filters):
+#     return net
     in_channels = gc.shape.as_list()[-1]
     kernel = tf.get_variable(name='kernel', 
                              shape=[1, in_channels, filters], 
@@ -44,11 +45,12 @@ class FastGenerationConfig(object):
     x_quantized = mu_law(x)
     x_scaled = x_quantized
 
-    print('x:', x.shape)
-
     encoding = tf.placeholder(
         name='encoding', shape=[batch_size, ae_bottleneck_width], dtype=tf.float32)
     en = encoding
+    
+#     en = tf.concat([en, gc], axis=-1)
+    print('gc en:', en.shape)
 
     init_ops, push_ops = [], []
 
@@ -76,7 +78,6 @@ class FastGenerationConfig(object):
     # Residual blocks with skip connections.
     for i in range(num_layers):
       dilation = 2**(i % num_stages)
-
       # dilated masked cnn
       d, inits, pushs = causal_linear(
           x=l,
@@ -175,14 +176,17 @@ class Config(object):
     return x
 
   def add_gc(self, net, gc, filters):
+#     return net
     in_channels = gc.shape.as_list()[-1]
     kernel = tf.get_variable(name='kernel', 
                              shape=[1, in_channels, filters], 
                              dtype=tf.float32,
+                             regularizer=tf.keras.regularizers.l2(decay),
                              initializer=tf.uniform_unit_scaling_initializer(1.0))
     bias = tf.get_variable(name='bias', 
                            shape=[filters], 
                            dtype=tf.float32,
+                           regularizer=tf.keras.regularizers.l2(decay),
                            initializer=tf.constant_initializer(1.0))
     net += tf.nn.conv1d(gc, kernel, stride=1, padding='VALID') + bias
     return net
@@ -193,7 +197,6 @@ class Config(object):
     x = inputs
     x_quantized = mu_law(x)
     x_scaled = x_quantized # [-1, 1]
-    print('x:', x.shape)
 
     ###
     # The Non-Causal Temporal Encoder.
@@ -209,10 +212,10 @@ class Config(object):
     
     for num_layer in range(ae_num_layers):
         dilation = 2**(num_layer % ae_num_stages)
-        dilation = 1
+#         dilation = 16
         conv = conv1d(
                en,
-               causal=False,
+               causal=True,
                num_filters=ae_width,
                filter_length=ae_filter_length,
                dilation=dilation,
@@ -221,7 +224,7 @@ class Config(object):
                is_training=True)
         gate = conv1d(
                en,
-               causal=False,
+               causal=True,
                num_filters=ae_width,
                filter_length=ae_filter_length,
                dilation=dilation,
@@ -247,7 +250,6 @@ class Config(object):
 #     en = pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
     self.encoding = en
     print('en:', en.shape)
-    
 #     '''
     self.k = k
     self.latent_dim = ae_bottleneck_width
@@ -257,7 +259,7 @@ class Config(object):
                                  shape=[self.k, self.latent_dim], 
                                  # initializer=tf.initializers.orthogonal(gain=1.0),
                                  initializer=tf.uniform_unit_scaling_initializer(),
-                                 regularizer=tf.keras.regularizers.l2(decay))
+                                 regularizer=tf.keras.regularizers.l2(decay*10))
     expanded_ze = tf.expand_dims(z_e, -2)
     distances = tf.reduce_sum((expanded_ze - self.embedding) ** 2, axis=-1)
     q_z_x = tf.argmin(distances, axis=-1)
@@ -265,26 +267,29 @@ class Config(object):
     z_q = z_e + tf.stop_gradient(e_k - z_e)
     en = z_q
     self.encoding = e_k
-
+    
+    if not is_training:
+      return
+    
     self.vq_loss = tf.reduce_mean((tf.stop_gradient(z_e) - e_k) ** 2)
     tf.summary.scalar('vq_loss', self.vq_loss)
-#     self.vq_loss = 0
 
     self.commitment_loss = 0.25 * tf.reduce_mean((z_e - tf.stop_gradient(e_k)) ** 2)
     tf.summary.scalar('commitment_loss', self.commitment_loss)
 #     '''
 #     self.commitment_loss, self.vq_loss = 0, 0
 
-    if not is_training:
-      return e_k
-
     gc = tf.argmax(gc, axis=-1)
     self.speaker_emb = tf.get_variable(name='speaker_emb', 
                              shape=[109, ae_bottleneck_width], 
                              dtype=tf.float32,
+                             regularizer=tf.keras.regularizers.l2(decay),
                              initializer=tf.uniform_unit_scaling_initializer(1.0))
     gc = tf.nn.embedding_lookup(self.speaker_emb, gc)
+#     gc = tf.tile(gc, [1, en.get_shape().as_list()[1], 1])
+#     en = tf.concat([en, gc], axis=-1)
     print('gc:', gc.shape) # [b, 1]
+    print('en:', en.shape)
 
     ###
     # The WaveNet Decoder.
@@ -317,6 +322,7 @@ class Config(object):
           filter_length=filter_length,
           dilation=dilation,
           name='dilatedconv_%d' % (i + 1),
+          hist=((i+1) in {10, 50}),
           regularizer=tf.keras.regularizers.l2(decay),
           is_training=is_training)
       if en is not None:
@@ -326,6 +332,8 @@ class Config(object):
                                 num_filters=2 * width,
                                 filter_length=1,
                                 name='cond_map_%d' % (i + 1),
+                                hist=((i+1)%10) == 0,
+                                regularizer=tf.keras.regularizers.l2(decay),
                                 is_training=is_training))
       if gc is not None:
         with tf.variable_scope('gc_%d'%(i+1)):
@@ -368,6 +376,7 @@ class Config(object):
                   num_filters=skip_width,
                   filter_length=1,
                   name='cond_map_out1',
+                  regularizer=tf.keras.regularizers.l2(decay),
                   is_training=is_training))
     if gc is not None:
       with tf.variable_scope('gc_final'):
