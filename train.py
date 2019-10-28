@@ -28,9 +28,6 @@ parser.add_argument('-e', default=1, type=int,
 parser.add_argument('-b', default=4, type=int,
                     dest='batch_size', metavar='int',
                     help='batch size')
-parser.add_argument('-en', default='Magenta',
-                    dest='encoder', metavar='string',
-                    help='encoder name')
 parser.add_argument('-log', default='logs', 
                     dest='log_path', metavar='string',
                     help='path to save logs for tensorboard')
@@ -62,12 +59,11 @@ elif args.dataset == 'LibriSpeech':
     dataset = LibriSpeech(**dataset_args)
 num_batches = dataset.num_batches
 
-
 with open(args.parameter_path) as file:
     parameters = json.load(file)
 encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
-if args.encoder in encoders:
-    encoder = encoders[args.encoder](parameters['latent_dim'])
+if parameters['encoder'] in encoders:
+    encoder = encoders[parameters['encoder']](parameters['latent_dim'])
 else:
     raise NotImplementedError("encoder %s not implemented" % args.encoder)
 decoder = WavenetDecoder(parameters['wavenet_parameters'])

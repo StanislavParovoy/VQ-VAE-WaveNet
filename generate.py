@@ -4,9 +4,10 @@ from Decoder.decoder import *
 from utils import get_speaker_to_int, decode
 import tensorflow as tf
 import numpy as np
-import time
+import time, json
 from tqdm import tqdm
 from scipy.io import wavfile
+from argparse import ArgumentParser
 
 if tf.__version__ == '1.14.0':
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
@@ -30,6 +31,9 @@ parser.add_argument('-speakers',
 parser.add_argument('-mode', default='sample', 
                     dest='mode',
                     help='decode mode, sample or greedy')
+parser.add_argument('-params', default='model_parameters.json',
+                    dest='parameter_path', metavar='str',
+                    help='path to parameters file')
 
 args = parser.parse_args()
 gs = int(args.restore_path.split('-')[-1])
@@ -40,7 +44,7 @@ wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
 wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
 wav = tf.tile(wav, [batch_size, 1, 1])
 
-speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
+speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
 speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
 for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
@@ -49,8 +53,8 @@ speaker = np.asarray(speaker, dtype=np.float32)
 with open(args.parameter_path) as file:
     parameters = json.load(file)
 encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
-if args.encoder in encoders:
-    encoder = encoders[args.encoder](parameters['latent_dim'])
+if parameters['encoder'] in encoders:
+    encoder = encoders[parameters['encoder']](parameters['latent_dim'])
 else:
     raise NotImplementedError("encoder %s not implemented" % args.encoder)
 decoder = WavenetDecoder(parameters['wavenet_parameters'])

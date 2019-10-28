@@ -132,4 +132,3 @@ class VCTK(Dataset):
         self.split_func = lambda s: s.split('/')[0]
         self.make_iterator(relative_path, in_memory, max_len, sr, batch_size, depth=109)
 
-
