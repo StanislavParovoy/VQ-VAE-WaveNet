@@ -34,6 +34,9 @@ parser.add_argument('-en', default='Magenta',
 parser.add_argument('-log', default='logs', 
                     dest='log_path', metavar='string',
                     help='path to save logs for tensorboard')
+parser.add_argument('-interval', default=100, type=int, 
+                    dest='interval', metavar='int',
+                    help='save log every interval step')
 parser.add_argument('-restore',
                     dest='restore_path', metavar='string',
                     help='path to restore weights')
@@ -46,7 +49,7 @@ parser.add_argument('-params', default='model_parameters.json',
 args = parser.parse_args()
 
 dataset_args = {
-    'relative_path': '../data/',
+    'relative_path': 'data/',
     'batch_size': args.batch_size,
     'in_memory': args.in_memory,
     'max_len': args.max_len,
@@ -94,7 +97,7 @@ else:
 
 gs = sess.run(model.global_step)
 lr = sess.run(model.lr)
-print('[restore] last global step: %d, learning rate: %.8f' % (gs, lr))
+print('[restore] last global step: %d, learning rate: %.5f' % (gs, lr))
 
 save_path = args.save_path
 save_dir, save_name = save_path.split('/')
@@ -108,17 +111,22 @@ for e in range(args.num_epochs):
         try:
             step += 1
             t = time.time()
-            _, rl, vl, cl, gs, lr, summary = sess.run([model.train_op, 
-                                               model.reconstruction_loss, 
-                                               model.vq_loss, 
-                                               model.commitment_loss,
-                                               model.global_step, 
-                                               model.lr,
-                                               model.summary])
-            writer.add_summary(summary, gs)
+
+            if (gs + 1) % args.interval == 0:
+                _, rl, gs, lr, summary = sess.run([model.train_op, 
+                                                   model.reconstruction_loss, 
+                                                   model.global_step, 
+                                                   model.lr,
+                                                   model.summary])
+                writer.add_summary(summary, gs)
+            else:
+                _, rl, gs, lr = sess.run([model.train_op, 
+                                                   model.reconstruction_loss, 
+                                                   model.global_step, 
+                                                   model.lr])
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [rec %.5f] [vq %.5f] [cmt %.5f] [lr %.5f]' % (rl, vl, cl, lr)
+            loss = ' [recons %.5f] [lr %.5f]' % (rl, lr)
             second = (num_batches - step) * t
             print(progress + loss + display_time(t, second), end='')
         except tf.errors.OutOfRangeError:
