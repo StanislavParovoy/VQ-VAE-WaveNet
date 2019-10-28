@@ -36,8 +36,7 @@ class WavenetDecoder():
         self.wavenet = Wavenet(self.args_file)
         logits, labels = self.wavenet.build(inputs=x, 
                                             local_condition=local_condition, 
-                                            global_condition=global_condition,
-                                            batch_size=x.get_shape().as_list()[0])
+                                            global_condition=global_condition)
         return logits, labels
 
 
@@ -52,5 +51,8 @@ class WavenetDecoder():
         '''
 
         self.wavenet = Wavenet(self.args_file)
-        self.wavenet.build_generator(input_t, local_condition_t, global_condition_t, 1)
+        self.wavenet.build_generator(input_t=input_t, 
+                                     local_condition_t=local_condition_t, 
+                                     global_condition_t=global_condition_t, 
+                                     batch_size=input_t.get_shape().as_list()[0])
 
