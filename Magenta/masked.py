@@ -65,6 +65,7 @@ def conv1d(x,
            num_filters,
            filter_length,
            name,
+           hist=False,
            dilation=1,
            causal=True,
            kernel_initializer=tf.uniform_unit_scaling_initializer(1.0),
@@ -85,6 +86,9 @@ def conv1d(x,
     biases = tf.get_variable(
         'biases', shape=biases_shape, initializer=biases_initializer,
         regularizer=regularizer, trainable=is_training)
+    if hist:
+        tf.summary.histogram(name + '_kernel', weights)
+        tf.summary.histogram(name + '_bias', biases)
 
   x_ttb = time_to_batch(x, dilation)
   if filter_length > 1 and causal:
@@ -161,9 +165,11 @@ def causal_linear(x, n_inputs, n_outputs, name, filter_length, rate, batch_size)
     return y, (init_1, ), (push_1, )
 
 def linear(x, n_inputs, n_outputs, name):
+  n_inputs = x.get_shape().as_list()[-1]
   w = tf.get_variable(name=name + "/W", 
     shape=[1, 1, n_inputs, n_outputs], dtype=tf.float32)
   b = tf.get_variable(name=name + "/biases", 
     shape=[n_outputs], dtype=tf.float32)
   y = tf.nn.bias_add(tf.matmul(x, w[0, 0]), b)
   return y
+

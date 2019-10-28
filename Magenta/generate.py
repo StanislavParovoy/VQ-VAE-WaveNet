@@ -43,7 +43,7 @@ sess = tf.Session()
 wav = tf.constant(sess.run(wav))
 
 speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
-speaker = [[0] * 109] * len(args.speakers)
+speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
 for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)

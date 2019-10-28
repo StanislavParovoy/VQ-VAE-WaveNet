@@ -83,12 +83,18 @@ for e in range(args.num_epochs):
         try:
             step += 1
             t = time.time()
-            _, l, summary, gs, lr = sess.run([model.opt, 
-                                              model.reconstruction_loss, 
-                                              model.summary, 
-                                              model.global_step,
-                                              model.lr])
-            writer.add_summary(summary, gs)
+            if gs % 100 == 0:
+                _, l, summary, gs, lr = sess.run([model.opt, 
+                                                  model.reconstruction_loss, 
+                                                  model.summary, 
+                                                  model.global_step,
+                                                  model.lr])
+                writer.add_summary(summary, gs)
+            else:
+                _, l, gs, lr = sess.run([model.opt, 
+                                                  model.reconstruction_loss, 
+                                                  model.global_step,
+                                                  model.lr])
             t = time.time() - t
             progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
             loss = ' [loss %.5f] [lr %.7f]' % (l, lr)

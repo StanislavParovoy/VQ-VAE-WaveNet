@@ -41,7 +41,7 @@ wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
 wav = tf.tile(wav, [batch_size, 1, 1])
 
 speaker_to_int = get_speaker_to_int('../data/vctk_speakers.txt')
-speaker = [[0] * 109] * len(args.speakers)
+speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
 for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
 speaker = np.asarray(speaker, dtype=np.float32)
