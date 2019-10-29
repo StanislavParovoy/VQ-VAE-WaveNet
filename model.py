@@ -11,6 +11,7 @@ class VQVAE(object):
         self.decoder = args['decoder']
         self.k = args['k']
         self.beta = args['beta']
+        self.use_vq = args['use_vq']
         self._print = lambda s, t: print(s, t.shape) if args['verbose'] else None
 
         self._print('input x:', self.x)
@@ -74,23 +75,26 @@ class VQVAE(object):
         self.reconstruction_loss = tf.reduce_mean(loss, axis=0)
         tf.summary.scalar('reconstruction_loss', self.reconstruction_loss)
 
-        self.vq_loss = tf.reduce_mean((tf.stop_gradient(self.z_e) - self.e_k) ** 2)
-        tf.summary.scalar('vq_loss', self.vq_loss)
-
-        self.commitment_loss = self.beta * \
-            tf.reduce_mean((self.z_e - tf.stop_gradient(self.e_k)) ** 2)
-        tf.summary.scalar('commitment_loss', self.commitment_loss)
-
         self.regularisation_loss = \
             tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
         tf.summary.scalar('regularisation_loss', self.regularisation_loss)
+
+        self.loss = self.reconstruction_loss + self.regularisation_loss
+
+        if self.use_vq:
+            self.vq_loss = tf.reduce_mean((tf.stop_gradient(self.z_e) - self.e_k) ** 2)
+            tf.summary.scalar('vq_loss', self.vq_loss)
+
+            self.commitment_loss = self.beta * \
+                tf.reduce_mean((self.z_e - tf.stop_gradient(self.e_k)) ** 2)
+            tf.summary.scalar('commitment_loss', self.commitment_loss)
+
+            self.loss += self.vq_loss + self.commitment_loss
 
         self.summary = tf.summary.merge_all()
 
 
     def _build_optimiser(self, learning_rate_schedule):
-        assert None not in [self.reconstruction_loss, self.vq_loss, self.commitment_loss]
-
         self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
         self.lr = tf.Variable(learning_rate_schedule[0])
         for key, value in learning_rate_schedule.items():
@@ -98,17 +102,19 @@ class VQVAE(object):
                 tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
 
         optimiser = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimiser.minimize(self.reconstruction_loss + self.vq_loss \
-            + self.commitment_loss + self.regularisation_loss,
-            global_step=self.global_step)
+        self.train_op = optimiser.minimize(self.loss, global_step=self.global_step)
 
 
     def _build(self):
         with tf.variable_scope('encoder'):
             self._build_encoder()
-        with tf.variable_scope('embedding'):
-            self._build_embedding_space()
-            self._discretise()
+        if self.use_vq:
+            with tf.variable_scope('embedding'):
+                self._build_embedding_space()
+                self._discretise()
+        else:
+            self.e_k = self.z_e
+            self.z_q = self.z_e
 
 
     def build(self, learning_rate_schedule):
