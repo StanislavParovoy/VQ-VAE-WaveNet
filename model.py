@@ -26,9 +26,9 @@ class VQVAE(object):
     def _build_embedding_space(self):
         latent_dim = self.z_e.get_shape().as_list()[-1]
         self.embedding = tf.get_variable(name='embedding', 
-                                         initializer=tf.eye(latent_dim),
-                                         # shape=[self.k, latent_dim], 
-                                         # initializer=tf.uniform_unit_scaling_initializer(),
+                                         # initializer=tf.eye(latent_dim),
+                                         shape=[self.k, latent_dim], 
+                                         initializer=tf.uniform_unit_scaling_initializer(),
                                          regularizer=tf.keras.regularizers.l2(1e-5))
         self._print('embedding:', self.embedding)
 

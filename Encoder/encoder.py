@@ -48,10 +48,12 @@ class Encoder_Magenta():
             cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
-                with tf.variable_scope('dilated_gate'):
-                    g = conv1d_v2(en, filters, kernel_size, 'VALID', dilations, log=True)
-                with tf.variable_scope('dilated_filter'):
-                    f = conv1d_v2(en, filters, kernel_size, 'VALID', dilations, log=True)
+                with tf.variable_scope('dilated'):
+                    d = conv1d_v2(en, filters, 1, 'VALID', 1, log=True)
+                with tf.variable_scope('gate'):
+                    g = conv1d_v2(d, filters, kernel_size, 'VALID', dilations, log=True)
+                with tf.variable_scope('filter'):
+                    f = conv1d_v2(d, filters, kernel_size, 'VALID', dilations, log=True)
                 d = tf.nn.tanh(g) * tf.nn.sigmoid(f)
                 with tf.variable_scope('residual'):
                     en = en + conv1d_v2(d, filters, 1, 'VALID', log=True)
