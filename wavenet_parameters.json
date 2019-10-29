@@ -23,7 +23,7 @@
 "residual_filters": 256,
 
 "preprocess":{
-    "kernel_size": 1, 
+    "kernel_size": 2, 
     "filters": 256
 }
 
