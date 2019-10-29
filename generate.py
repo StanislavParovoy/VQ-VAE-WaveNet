@@ -65,7 +65,8 @@ model_args = {
     'decoder': decoder,
     'k': parameters['k'],
     'beta': parameters['beta'],
-    'verbose': parameters['verbose']
+    'verbose': parameters['verbose'],
+    'use_vq': parameters['use_vq']
 }
 
 model = VQVAE(model_args)
@@ -76,11 +77,12 @@ sess = tf.Session()
 saver = tf.train.Saver()
 saver.restore(sess, args.restore_path)
 
-encoding = sess.run(model.z_q)
+encoding = sess.run(model.e_k)
 length = sess.run(wav).shape[1]
 
-embedding = sess.run(model.embedding)
-np.save('embedding_%d.npy'%gs, embedding)
+if parameters['use_vq']:
+    embedding = sess.run(model.embedding)
+    np.save('embedding_%d.npy'%gs, embedding)
 
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)

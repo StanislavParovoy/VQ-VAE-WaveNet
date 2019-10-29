@@ -74,7 +74,8 @@ model_args = {
     'decoder': decoder,
     'k': parameters['k'],
     'beta': parameters['beta'],
-    'verbose': parameters['verbose']
+    'verbose': parameters['verbose'],
+    'use_vq': parameters['use_vq']
 }
 
 schedule = {int(k): v for k, v in parameters['learning_rate_schedule'].items()}

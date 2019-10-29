@@ -20,11 +20,13 @@ Parameters can be found in `Encoder/encoder.py` and `model_parameters.json`.
 
 There are 2 ways to train the embedding:
 - train $z_e$ and $e_k$ separately, as described in original paper (default)
-- train them together
+- train them together without tf.stop_gradient
 
 There are 2 ways to initialise the embedding:
 - random normal init (default)
-- identity matrix (requires k == latent_dim; need to manually change code in `model.py`)
+- identity matrix (requires k == latent_dim; need to manually change code in `model.py`; not so helpful)
+
+This could be turned off as well, in which case an AE is trained.
 
 Parameters can be found in `model_parameters.json`.
 
@@ -75,7 +77,6 @@ example usage:
 then upload tsv files in folder `embeddings` to the website.
 
 ### TODO
-- [ ] Add control for whether use vq or not
 - [ ] Add control for whether use speaker embedding or just one hot
 - [ ] Tune
 - [ ] Train a prior based on vq
