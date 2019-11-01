@@ -56,7 +56,7 @@ def causal_conv1d(net, weights, stride=1, padding='CAUSAL', dilations=1):
     return net
 
 
-def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=False):
+def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=False, stride=1):
     padding = padding.upper()
     if padding == 'CAUSAL':
         padding = 'VALID'
@@ -79,7 +79,7 @@ def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=Fals
     # in TF r1.14, arg 'dilations' is added to tf.nn.conv1d
     net = tf.pad(net, [[0, 0], [dilations * (kernel_size - 1), 0], [0, 0]])
     kernel = tf.expand_dims(kernel, axis=0) # [fw, in, out] -> [fh=1, fw, in, out]
-    stride = [1, 1, 1, 1]
+    stride = [1, 1, stride, 1]
     dilations = [1, 1, dilations, 1]
     net = tf.expand_dims(net, axis=1) # [b, t, c] -> [b, h=1, t, c]
     net = tf.nn.conv2d(net, kernel, strides=stride, padding=padding, dilations=dilations)
@@ -155,22 +155,38 @@ def linear(net, filters):
     return tf.matmul(net, kernel[0]) + bias
 
 
-def fast_conv1d(past, current, filters, kernel_size=2):
+def fast_conv1d(current, filters, kernel_size, dilations, batch_size):
     ''' performs one stride of convolution on a layer
     Args:
-        past: the past state
-        current: the current state
+        see fst_gated_cnn
     Returns:
         a new state at t+1
+        init_ops from fast_conv1d
+        push_ops from fast_conv1d
     '''
     in_channels = current.shape.as_list()[-1]
     kernel_shape = [kernel_size, in_channels, filters]
     kernel = tf.get_variable(name='kernel', shape=kernel_shape)
     bias = tf.get_variable(name='bias', shape=[filters])
 
-    kernel_past = kernel[0, :, :]
-    kernel_current = kernel[1, :, :]
-    return tf.matmul(past, kernel_past) + tf.matmul(current, kernel_current) + bias
+    init_ops, push_ops = [], []
+    new_state = tf.matmul(current, kernel[kernel_size - 1]) + bias
+    state_size = in_channels
+    for i in range(1, kernel_size):
+        q = tf.FIFOQueue(dilations,
+                         dtypes=tf.float32,
+                         shapes=(batch_size, state_size))
+        init = q.enqueue_many(tf.zeros((dilations, batch_size, state_size)))
+
+        # dequeue past, enqueue current
+        past = q.dequeue()
+        push = q.enqueue([current])
+        init_ops.append(init)
+        push_ops.append(push)
+
+        new_state += tf.matmul(past, kernel[kernel_size - i - 1])
+
+    return new_state, init_ops, push_ops
 
 
 def fast_condition(net, condition_t):
@@ -187,20 +203,24 @@ def fast_condition(net, condition_t):
     return net
 
 
-def fast_gated_cnn(past, current, dilation_filters, kernel_size, 
+def fast_gated_cnn(current, dilation_filters, kernel_size, dilations, batch_size, 
     local_condition_t, global_condition_t):
     ''' Performs one stride of the gated convolution. 
     Args:
-        past: the past state dequeued from q
         current: the current state at time t
         dilation_filters: number of filters for dilated_causal_conv
         kernel_size: filter width of dilated_causal_conv
+        dilations: 
+        batch_size: will determine size of queue
         local_condition_t: local condition at time t, placeholder
         global_condition_t: local condition at time t, placeholder
     Returns:
         gated conv on net
+        init_ops from fast_conv1d
+        push_ops from fast_conv1d
     '''
-    net = fast_conv1d(past, current, 2 * dilation_filters, kernel_size)
+    net, init_ops, push_ops = \
+        fast_conv1d(current, 2 * dilation_filters, kernel_size, dilations, batch_size)
     with tf.variable_scope('local_condition'):
         net = fast_condition(net, local_condition_t)
     with tf.variable_scope('global_condition'):
@@ -208,22 +228,29 @@ def fast_gated_cnn(past, current, dilation_filters, kernel_size,
     # half of gated to tanh, half of gated to sigmoid
     net_filter, net_gate = net[:, : dilation_filters], net[:, dilation_filters: ]
     net = tf.nn.tanh(net_filter) * tf.nn.sigmoid(net_gate)
-    return net
+    return net, init_ops, push_ops
 
 
-def fast_residual_stack(past, current, dilation_filters, kernel_size, 
+def fast_residual_stack(current, dilation_filters, kernel_size, dilations, batch_size,
     local_condition_t, global_condition_t, skip_filters, residual_filters):
     ''' Performs one stride of one layer of residual stack
     Args:
-        past...condition_t: see fast_gated_cnn
+        current: current state at time t
+        dilation_filters:
+        kernel_size:
+        dilations:
+        batch_size: for fast_conv1d
         skip_filters: number of filters for skip_connection
         residual_filters: number of filters for residual_connection
     Returns:
-        a tuple of skip connection of shape [b, skip_filters] and 
+        skip connection of shape [b, skip_filters] 
         residual_connection of shape [b, residual_filters]
+        init_ops from fast_conv1d
+        push_ops from fast_conv1d
     '''
     with tf.variable_scope('gated'):
-        gated = fast_gated_cnn(past, current, dilation_filters, kernel_size, local_condition_t, global_condition_t)
+        gated, init_ops, push_ops = fast_gated_cnn(current, dilation_filters, \
+            kernel_size, dilations, batch_size, local_condition_t, global_condition_t)
 
     with tf.variable_scope('skip'):
         skip_connection = linear(gated, skip_filters)
@@ -231,7 +258,5 @@ def fast_residual_stack(past, current, dilation_filters, kernel_size,
     with tf.variable_scope('residual'):
         residual_connection = linear(gated, residual_filters)
 
-    return skip_connection, residual_connection
-
-
+    return skip_connection, residual_connection, init_ops, push_ops
 

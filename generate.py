@@ -83,6 +83,9 @@ length = sess.run(wav).shape[1]
 if parameters['use_vq']:
     embedding = sess.run(model.embedding)
     np.save('embedding_%d.npy'%gs, embedding)
+if parameters['speaker_embedding'] > 0:
+    embedding = sess.run(model.speaker_embedding)
+    np.save('speaker_embedding_%d.npy'%gs, embedding)
 
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)

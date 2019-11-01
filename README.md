@@ -77,8 +77,6 @@ example usage:
 then upload tsv files in folder `embeddings` to the website.
 
 ### TODO
-- [ ] Add control for whether use speaker embedding or just one hot
-- [ ] Tune
 - [ ] Train a prior based on vq
 
 ### Alternative Implementation

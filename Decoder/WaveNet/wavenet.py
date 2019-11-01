@@ -115,21 +115,13 @@ class Wavenet():
         init_ops = []
         push_ops = []
 
-        state_size = input_t.shape.as_list()[-1]
-        q = tf.FIFOQueue(1,
-                         dtypes=tf.float32,
-                         shapes=(batch_size, state_size))
-        init = q.enqueue_many(tf.zeros((1, batch_size, state_size)))
-
-        past = q.dequeue()
-        push = q.enqueue([input_t])
-        init_ops.append(init)
-        push_ops.append(push)
-
         # preprocess layer
         with tf.variable_scope('preprocess'):
             args = self.args['preprocess']
-            current = fast_conv1d(past, input_t, args['filters'], args['kernel_size'])
+            current, inits, pushes = \
+                fast_conv1d(input_t, args['filters'], args['kernel_size'], 1, batch_size)
+            init_ops.extend(inits)
+            push_ops.extend(pushes)
 
         # skip starts from preprocess
         with tf.variable_scope('skip'):
@@ -145,23 +137,14 @@ class Wavenet():
             cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
-                q = tf.FIFOQueue(dilations,
-                                 dtypes=tf.float32,
-                                 shapes=(batch_size, state_size))
-                init = q.enqueue_many(tf.zeros((dilations, batch_size, state_size)))
-
-                # dequeue past, enqueue current
-                past = q.dequeue()
-                push = q.enqueue([current])
-                init_ops.append(init)
-                push_ops.append(push)
-
-                skip_out, res_out = fast_residual_stack(past, current, state_size, \
-                    kernel_size, local_condition_t, global_condition_t, \
-                    skip_filters, residual_filters)
+                skip_out, res_out, inits, pushes = fast_residual_stack(
+                    current, state_size, kernel_size, dilations, batch_size, \
+                    local_condition_t, global_condition_t, skip_filters, residual_filters)
 
                 skip += skip_out
                 current += res_out
+                init_ops.extend(inits)
+                push_ops.extend(pushes)
 
         net = skip
 

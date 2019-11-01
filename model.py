@@ -16,6 +16,11 @@ class VQVAE(object):
 
         self._print('input x:', self.x)
         if self.h is not None:
+            k = args['speaker_embedding']
+            if k > 0:
+                self.h = tf.argmax(self.h, axis=-1)
+                self.speaker_embedding = tf.get_variable(name='speaker_embedding', shape=[109, k])
+                self.h = tf.nn.embedding_lookup(self.speaker_embedding, self.h)
             self._print('input h:', self.h)
 
 

@@ -4,17 +4,15 @@
 
 "quantization_channels": 256,
 
-"num_cycles": 5,
+"num_cycles": 3,
 
 "num_cycle_layers": 10,
 
 "dilation_rates": [1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
                    1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
-                   1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
-                   1, 2, 4, 8, 16, 32, 64, 128, 256, 512,
                    1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
 
-"kernel_size": 2,
+"kernel_size": 3,
 
 "dilation_filters": 256,
 
@@ -23,7 +21,7 @@
 "residual_filters": 256,
 
 "preprocess":{
-    "kernel_size": 2, 
+    "kernel_size": 1, 
     "filters": 256
 }
 
