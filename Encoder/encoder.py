@@ -39,6 +39,7 @@ class Encoder_Magenta():
         filters = 128
         kernel_size = 5
 
+        net = shift_right(net)
         net = mu_law_encode(net)
 
         with tf.variable_scope('preprocess'):
@@ -49,15 +50,14 @@ class Encoder_Magenta():
             layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
             with tf.variable_scope(cycle_id + '/' + layer_id):
                 with tf.variable_scope('dilated'):
-                    d = conv1d_v2(en, filters, 1, 'VALID', 1, log=True)
+                    d = conv1d_v2(en, filters, 1, 'VALID', 1, log=True, stride=2)
                 with tf.variable_scope('gate'):
                     g = conv1d_v2(d, filters, kernel_size, 'VALID', dilations, log=True)
                 with tf.variable_scope('filter'):
                     f = conv1d_v2(d, filters, kernel_size, 'VALID', dilations, log=True)
-                d = tf.nn.tanh(g) * tf.nn.sigmoid(f)
+                gated = tf.nn.tanh(g) * tf.nn.sigmoid(f)
                 with tf.variable_scope('residual'):
-                    en = en + conv1d_v2(d, filters, 1, 'VALID', log=True)
-                en = pool1d(en, 2)
+                    en = d + conv1d_v2(gated, filters, 1, 'VALID', log=True)
         with tf.variable_scope('postprocess'):
             en = conv1d_v2(en, self.latent_dim, 1, 'VALID', log=True)
         return en
