@@ -141,7 +141,7 @@ def causal_linear(x, n_inputs, n_outputs, name, filter_length, rate, batch_size)
     q_2 = tf.FIFOQueue(rate, dtypes=tf.float32, shapes=(batch_size, n_inputs))
     init_2 = q_2.enqueue_many(tf.zeros((rate, batch_size, n_inputs)))
     state_2 = q_2.dequeue()
-    push_2 = q_2.enqueue(x)  
+    push_2 = q_2.enqueue(state_1)  
 
   w = tf.get_variable(
       name=name + "/W",
