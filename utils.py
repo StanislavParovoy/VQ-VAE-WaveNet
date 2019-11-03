@@ -85,6 +85,19 @@ def get_speaker_to_int(speaker_path):
     return speaker_to_int
 
 
+def get_speaker_info(speaker_to_int, info_path):
+    with open(info_path) as file:
+        lines = file.readlines()
+    speaker_info = {}
+    for line in lines[1:]:
+        speaker, info = line.split(maxsplit=1)
+        speaker_info[speaker_to_int['p' + speaker]] = '#'.join(info.split())
+    for speaker_int in speaker_to_int.values():
+        if speaker_int not in speaker_info:
+            speaker_info[speaker_int] = 'missing_info'
+    return speaker_info
+
+
 if __name__ == '__main__':
     write_speaker_to_int('vctk')
     write_speaker_to_int('librispeech')

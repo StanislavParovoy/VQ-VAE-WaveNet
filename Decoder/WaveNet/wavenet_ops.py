@@ -178,9 +178,10 @@ def fast_conv1d(current, filters, kernel_size, dilations, batch_size):
                          shapes=(batch_size, state_size))
         init = q.enqueue_many(tf.zeros((dilations, batch_size, state_size)))
 
-        # dequeue past, enqueue current
+        # dequeue past, enqueue state dequeued from last queue
         past = q.dequeue()
         push = q.enqueue([current])
+        current = past
         init_ops.append(init)
         push_ops.append(push)
 
