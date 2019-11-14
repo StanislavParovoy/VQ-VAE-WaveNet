@@ -67,7 +67,7 @@ model_args = {
     'beta': parameters['beta'],
     'verbose': parameters['verbose'],
     'use_vq': parameters['use_vq'],
-    'speaker_embedding': parameters['speaker_embedding']
+    'speaker_dim': parameters['speaker_dim']
 }
 
 model = VQVAE(model_args)
@@ -83,10 +83,10 @@ length = sess.run(wav).shape[1]
 
 if parameters['use_vq']:
     embedding = sess.run(model.embedding)
-    np.save('embedding_%d.npy'%gs, embedding)
+    np.save(args.save_name + '/embedding_%d.npy' % gs, embedding)
 if parameters['speaker_embedding'] > 0:
     embedding = sess.run(model.speaker_embedding)
-    np.save('speaker_embedding_%d.npy'%gs, embedding)
+    np.save(args.save_name + '/speaker_embedding_%d.npy' % gs, embedding)
 
 audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
@@ -101,5 +101,5 @@ for i in tqdm(range(length)):
     audio = decoded.reshape([batch_size, 1])
 
 for i, s in enumerate(args.speakers):
-    wavfile.write(args.save_name + '_%d_%s.wav'%(gs, s), 16000, to_write[i])
+    wavfile.write(args.save_name + '/%d_%s.wav'%(gs, s), 16000, to_write[i])
 

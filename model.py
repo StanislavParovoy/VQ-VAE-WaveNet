@@ -19,23 +19,33 @@ class VQVAE(object):
             k = args['speaker_embedding']
             if k > 0:
                 self.h = tf.argmax(self.h, axis=-1)
-                self.speaker_embedding = tf.get_variable(name='speaker_embedding', shape=[109, k])
+                self.speaker_embedding = tf.get_variable(
+                                            name='speaker_embedding', 
+                                            shape=[109, k],
+                                            initializer=tf.uniform_unit_scaling_initializer(2.))
                 self.h = tf.nn.embedding_lookup(self.speaker_embedding, self.h)
+                tf.summary.histogram('speaker_embedding', self.speaker_embedding)
+                u, v = tf.nn.moments(self.speaker_embedding, [-1])
+                tf.summary.histogram('speaker_embedding_u', u)
+                tf.summary.histogram('speaker_embedding_v', v)
             self._print('input h:', self.h)
 
 
     def _build_encoder(self):
         self.z_e = self.encoder.build(self.x)
+        tf.summary.histogram('z_e', self.z_e)
         self._print('z_e:', self.z_e)
 
 
     def _build_embedding_space(self):
         latent_dim = self.z_e.get_shape().as_list()[-1]
         self.embedding = tf.get_variable(name='embedding', 
-                                         # initializer=tf.eye(latent_dim),
                                          shape=[self.k, latent_dim], 
-                                         initializer=tf.uniform_unit_scaling_initializer(),
-                                         regularizer=tf.keras.regularizers.l2(1e-5))
+                                         initializer=tf.initializers.truncated_normal(mean=0.1, stddev=1.2))
+        u, v = tf.nn.moments(self.embedding, [-1])
+        tf.summary.histogram('embedding_u', u)
+        tf.summary.histogram('embedding_v', v)
+        tf.summary.histogram('embedding', self.embedding)
         self._print('embedding:', self.embedding)
 
 
@@ -44,11 +54,14 @@ class VQVAE(object):
         # embedding:            [k, d]
         expanded_ze = tf.expand_dims(self.z_e, -2)
         distances = tf.reduce_sum((expanded_ze - self.embedding) ** 2, axis=-1)
+        tf.summary.histogram('distances', distances)
 
         # q(z|x) refers to the 2d grid in the middle in figure 1
         self.q_z_x = tf.argmin(distances, axis=-1)
+        tf.summary.histogram('q(z|x)', self.q_z_x)
         self._print('q(z|x):', self.q_z_x)
         self.e_k = tf.gather(params=self.embedding, indices=self.q_z_x)
+        tf.summary.histogram('e_k', self.e_k)
 
         # this should pass gradient from z_q to z_e
         # evaluates to: self.z_q = tf.gather(params=self.embedding, indices=self.q_z_x)
@@ -113,13 +126,13 @@ class VQVAE(object):
     def _build(self):
         with tf.variable_scope('encoder'):
             self._build_encoder()
-        if self.use_vq:
-            with tf.variable_scope('embedding'):
+        with tf.variable_scope('embedding'):
+            if self.use_vq:
                 self._build_embedding_space()
                 self._discretise()
-        else:
-            self.e_k = self.z_e
-            self.z_q = self.z_e
+            else:
+                self.e_k = self.z_e
+                self.z_q = self.z_e
 
 
     def build(self, learning_rate_schedule):

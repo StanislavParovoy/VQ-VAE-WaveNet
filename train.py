@@ -65,7 +65,7 @@ encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
 if parameters['encoder'] in encoders:
     encoder = encoders[parameters['encoder']](parameters['latent_dim'])
 else:
-    raise NotImplementedError("encoder %s not implemented" % args.encoder)
+    raise NotImplementedError('encoder %s not implemented' % args.encoder)
 decoder = WavenetDecoder(parameters['wavenet_parameters'])
 model_args = {
     'x': dataset.x,

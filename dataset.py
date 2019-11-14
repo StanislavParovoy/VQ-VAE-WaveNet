@@ -44,10 +44,9 @@ class Dataset():
         return wav, speaker
 
     def make_iterator(self, relative_path, in_memory, max_len, sr, batch_size, depth):
-        if relative_path != '':
-            filename = relative_path + self.filename
-            speaker_file = relative_path + self.speaker_file
-            data_dir = relative_path + self.data_dir
+        filename = relative_path + self.filename
+        speaker_file = relative_path + self.speaker_file
+        data_dir = relative_path + self.data_dir
 
         self.speaker_to_int = get_speaker_to_int(speaker_file)
         self.all_files = self.read_files(filename)

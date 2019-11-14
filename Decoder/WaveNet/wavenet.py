@@ -153,14 +153,15 @@ class Wavenet():
             net = tf.nn.relu(net)
             net = linear(net, self.args['skip_filters'])
 
-            # # add condition
+            # add condition
             if local_condition_t is not None:
                 with tf.variable_scope('local_condition'):
                     net = fast_condition(net, local_condition_t)
+            if global_condition_t is not None:
                 with tf.variable_scope('global_condition'):
                     net = fast_condition(net, global_condition_t)
 
-        # # postprocess layer 2, outputs logits
+        # postprocess layer 2, outputs logits
         with tf.variable_scope('postprocess2'):
             net = tf.nn.relu(net)
             net = linear(net, self.args['quantization_channels'])

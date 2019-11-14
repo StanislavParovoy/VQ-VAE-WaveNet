@@ -23,12 +23,10 @@ def decode(predictions, mode='sample'):
     if mode == 'sample':
         return sample(predictions)
     elif mode == 'greedy':
-        prob = tf.nn.softmax(predictions)
-        pred = tf.math.argmax(prob, axis=-1)
-        return mu_law_decode(pred)
+        pred = np.argmax(predictions, axis=-1)
+        return mu_law_decode_np(pred)
     else:
-        print('implement on your own')
-        return 0
+        raise NotImplementedError("decode mode %s not implemented" % mode)
 
 
 def display_time(t, second):
