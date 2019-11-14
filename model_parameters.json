@@ -1,6 +1,6 @@
 {
 
-"encoder": "Magenta",
+"encoder": "64",
 
 "use_vq": true,
     

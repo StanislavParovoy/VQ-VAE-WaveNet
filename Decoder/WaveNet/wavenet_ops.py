@@ -191,10 +191,10 @@ def fast_conv1d(current, filters, kernel_size, dilations, batch_size):
 
 
 def fast_condition(net, condition_t):
-    ''' Adds condition to net. Global condition is concatenated to local condition.
+    ''' Adds condition to net. 
     Args:
         net: the current state at time t
-        condition_t: local condition at time t
+        condition_t: local / global condition at time t
     Returns:
         net added with 1x1 condition_t
     '''

@@ -10,9 +10,9 @@ TensorFlow r1.12 / r1.14, numpy, librosa, scipy, tqdm
 
 #### Encoder
 There are 3 encoders implemented:
-- `Magenta` encoder from nsynth-magenta, wavenet alike (default)
+- `64` 6 layers strided conv, as mentioned in original paper (default)
+- `Magenta` encoder from nsynth-magenta, wavenet alike
 - `2019` the one described in https://arxiv.org/abs/1901.08810
-- `64` 6 layers strided conv, as mentioned in original paper
 
 Parameters can be found in `Encoder/encoder.py` and `model_parameters.json`.
 
@@ -22,9 +22,9 @@ There are 2 ways to train the embedding:
 - train $z_e$ and $e_k$ separately, as described in original paper (default)
 - train them together without tf.stop_gradient
 
-There are 2 ways to initialise the embedding:
+Initialising the embedding:
 - random normal init (default)
-- identity matrix (requires k == latent_dim; need to manually change code in `model.py`; not so helpful)
+- orthogonal matrix
 
 This could be turned off as well, in which case an AE is trained.
 
@@ -73,8 +73,21 @@ example usage:
 For now it saves the trained vq embedding space, and visualises through http://projector.tensorflow.org
 
 example usage:
-`python3 visualise.py -embedding embedding_110640.npy -save embeddings`
+`python3 visualise.py -embedding embedding_110640.npy -speaker speaker_embedding_110640.npy -save embeddings`
 then upload tsv files in folder `embeddings` to the website.
+
+### Results
+
+The folder `results` contains a folder named by hyper parameters, containing training log & saved embedding space & reconstructed audio. The audios are so bad :( 
+
+Note that the speaker embedding separates gender almost perfectly (upload the vec and meta files to http://projector.tensorflow.org, then search for `#f#` or `#m#`), indicating that the model did learn something about speaker identity. Also `q(z|x)` did slowly converge to the assumed uniform prior distribution.
+
+### Micellaneous
+
+Stuff I've tried:
+- At each frame of encoder output, instead of predicting a vector and find nearest neighbour and use the index as a one-hot categorical distribution, I make the last encoder channel = k, then apply a softmax so it represents a k-way softmax distribution, whose KL-divergence with a uniform prior is the same as a cross entropy loss. Add this loss in addition to the original 3 losses.
+
+- First train without decoder, then freeze embedding & encoder and train decoder. This made the vq embedding space more diverse than training the whole model altogether.
 
 ### TODO
 - [ ] Train a prior based on vq

@@ -14,15 +14,15 @@
 
 "kernel_size": 3,
 
-"dilation_filters": 256,
+"dilation_filters": 368,
 
-"skip_filters": 512,
+"skip_filters": 256,
 
-"residual_filters": 256,
+"residual_filters": 368,
 
 "preprocess":{
     "kernel_size": 1, 
-    "filters": 256
+    "filters": 368
 }
 
 }

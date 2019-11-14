@@ -21,18 +21,11 @@ class WavenetDecoder():
         '''
         if is_training:
             local_condition = time_jitter(local_condition)
-
         local_condition = conv_3_128(local_condition)
-        print('local_condition:', local_condition.shape)
         local_condition = upsample(local_condition, size=256)
-        print('upsample:', local_condition.shape)
+        if global_condition is not None:
+            local_condition = concat(local_condition, global_condition)
         '''
-        
-        # if global_condition is not None:
-        #     print('global_condition:', global_condition.shape)
-        #     local_condition = concat(local_condition, global_condition)
-        # print('condition::', local_condition.shape)
-
         self.wavenet = Wavenet(self.args_file)
         logits, labels = self.wavenet.build(inputs=x, 
                                             local_condition=local_condition, 

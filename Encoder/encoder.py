@@ -12,17 +12,19 @@ class Encoder_64():
 
     def build(self, net):
         net = mu_law_encode(net)
+        net = shift_right(net)
         for i in range(6):
             net = tkl.Conv1D(filters=768,
                             kernel_size=4, 
                             strides=2,
                             padding='same',
                             activation='relu')(net)
-        net = tkl.Conv1D(filters=self.latent_dim, 
+            net = tkl.BatchNormalization()(net)
+        net = tkl.Conv1D(filters=self.latent_dim,
                          kernel_size=1, 
                          strides=1, 
                          padding='valid')(net)
-        print('en:', net.shape)
+        net = tkl.BatchNormalization()(net)
         return net
 
 
@@ -31,7 +33,7 @@ class Encoder_Magenta():
         super(Encoder_Magenta, self).__init__()
         self.latent_dim = latent_dim
         self.args = {}
-        self.args['dilation_rates'] = [2, 2, 4, 8, 16, 16]
+        self.args['dilation_rates'] = [1, 2, 4, 8, 16, 16]
         self.args['num_cycles'] = 1
         self.args['num_cycle_layers'] = 6
 
