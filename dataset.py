@@ -49,6 +49,7 @@ class Dataset():
         data_dir = relative_path + self.data_dir
 
         self.speaker_to_int = get_speaker_to_int(speaker_file)
+        self.num_speakers = len(self.speaker_to_int)
         self.all_files = self.read_files(filename)
 
         if in_memory:
@@ -70,7 +71,7 @@ class Dataset():
         iterator = dataset.make_initializable_iterator()
         self.init = iterator.initializer
         self.x, y = iterator.get_next()
-        self.y = tf.one_hot(y, depth=len(self.speaker_to_int), dtype=tf.float32)
+        self.y = tf.one_hot(y, depth=num_speakers, dtype=tf.float32)
         self.num_batches = np.ceil(total / batch_size)
 
     def _load(self, max_len, abs_name=''):

@@ -70,7 +70,8 @@ model_args = {
     'beta': parameters['beta'],
     'verbose': parameters['verbose'],
     'use_vq': parameters['use_vq'],
-    'speaker_embedding': parameters['speaker_embedding']
+    'speaker_embedding': parameters['speaker_embedding'],
+    'num_speakers': dataset.num_speakers
 }
 
 schedule = {int(k): v for k, v in parameters['learning_rate_schedule'].items()}

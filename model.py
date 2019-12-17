@@ -12,6 +12,7 @@ class VQVAE(object):
         self.k = args['k']
         self.beta = args['beta']
         self.use_vq = args['use_vq']
+        self.num_speakers = args['num_speakers']
         self._print = lambda s, t: print(s, t.shape) if args['verbose'] else None
 
         self._print('input x:', self.x)
@@ -21,7 +22,7 @@ class VQVAE(object):
                 self.h = tf.argmax(self.h, axis=-1)
                 self.speaker_embedding = tf.get_variable(
                                             name='speaker_embedding', 
-                                            shape=[109, k],
+                                            shape=[self.num_speakers, k],
                                             initializer=tf.uniform_unit_scaling_initializer(2.))
                 self.h = tf.nn.embedding_lookup(self.speaker_embedding, self.h)
                 tf.summary.histogram('speaker_embedding', self.speaker_embedding)
