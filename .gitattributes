@@ -1,0 +1,2 @@
+results/vqk3l3en64beta25/checkpoint.dms filter=lfs diff=lfs merge=lfs -text
+results/vqk3l3en64beta25/weights* filter=lfs diff=lfs merge=lfs -text
