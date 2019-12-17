@@ -2,13 +2,16 @@ import tensorflow as tf
 import numpy as np
 
 
-def mu_law_encode(x, quantization_channels=256, to_int=False):
+def mu_law_encode(x, quantization_channels=256, to_int=False, one_hot=False):
     mu = tf.cast(quantization_channels - 1, tf.float32)
     x = tf.clip_by_value(x, -1., 1.)
     y = tf.sign(x) * tf.math.log1p(mu * tf.abs(x)) / tf.math.log1p(mu)
-    if to_int:
+    if to_int or one_hot:
         # [-1, 1](float) -> (0, mu)(int); + 0.5 since tf.cast does flooring
-        return tf.cast((y + 1) / 2 * mu + 0.5, tf.int32)
+        y = tf.cast((y + 1) / 2 * mu + 0.5, tf.int32)
+        if one_hot:
+            y = tf.one_hot(y, depth=quantization_channels, dtype=tf.float32)
+            y = tf.squeeze(y, axis=-2)
     return y
 
 

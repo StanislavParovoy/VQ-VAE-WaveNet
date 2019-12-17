@@ -44,7 +44,7 @@ def batch_to_time(x, block_size):
     return y
 
 
-def causal_conv1d(net, weights, stride=1, padding='CAUSAL', dilations=1):
+def conv1d_v1(net, weights, stride=1, padding='CAUSAL', dilations=1):
     net = time_to_batch(net, dilations)
     filter_length = weights['kernel'].shape.as_list()[0]
     if filter_length > 1 and padding == 'CAUSAL':
@@ -56,7 +56,8 @@ def causal_conv1d(net, weights, stride=1, padding='CAUSAL', dilations=1):
     return net
 
 
-def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=False, stride=1):
+def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, 
+    log=False, stride=1, use_bias=True):
     padding = padding.upper()
     if padding == 'CAUSAL':
         padding = 'VALID'
@@ -67,14 +68,14 @@ def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=Fals
                              dtype=tf.float32,
                              initializer=tf.uniform_unit_scaling_initializer(1.0),
                              regularizer=tf.keras.regularizers.l2(1e-5))
-    bias = tf.get_variable(name='bias', 
-                           shape=[filters], 
-                           dtype=tf.float32,
-                           initializer=tf.constant_initializer(0.0),
-                           regularizer=tf.keras.regularizers.l2(1e-5))
+    if use_bias:
+        bias = tf.get_variable(name='bias', 
+                               shape=[filters], 
+                               dtype=tf.float32,
+                               initializer=tf.constant_initializer(0.0),
+                               regularizer=tf.keras.regularizers.l2(1e-5))
     if log:
-        tf.summary.histogram('_kernel', kernel)
-        tf.summary.histogram('_bias', bias)
+        tf.summary.histogram('kernel', kernel)
 
     # in TF r1.14, arg 'dilations' is added to tf.nn.conv1d
     net = tf.pad(net, [[0, 0], [dilations * (kernel_size - 1), 0], [0, 0]])
@@ -83,7 +84,9 @@ def conv1d_v2(net, filters, kernel_size, padding='CAUSAL', dilations=1, log=Fals
     dilations = [1, 1, dilations, 1]
     net = tf.expand_dims(net, axis=1) # [b, t, c] -> [b, h=1, t, c]
     net = tf.nn.conv2d(net, kernel, strides=stride, padding=padding, dilations=dilations)
-    net = tf.squeeze(net, axis=1) + bias
+    net = tf.squeeze(net, axis=1)
+    if use_bias:
+        net += bias
     return net
 
 
@@ -91,7 +94,7 @@ def add_condition(net, condition):
     if condition is not None:
         _, net_len, out_channels = net.shape.as_list()
         T = condition.shape.as_list()[1]
-        encoding = conv1d_v2(condition, out_channels, kernel_size=1)
+        encoding = conv1d_v2(condition, out_channels, kernel_size=1, log=True, use_bias=False)
         net = tf.reshape(net, [-1, T, net_len // T, out_channels])
         net += tf.expand_dims(encoding, 2)
         net = tf.reshape(net, [-1, net_len, out_channels])
@@ -141,7 +144,7 @@ https://arxiv.org/abs/1611.09482
 https://github.com/ibab/tensorflow-wavenet
 '''
 
-def linear(net, filters):
+def linear(net, filters, use_bias=True):
     ''' Performs one stride of a 1x1 convolution
     Args: 
         net: the current state
@@ -151,8 +154,10 @@ def linear(net, filters):
     '''
     in_channels = net.shape.as_list()[-1]
     kernel = tf.get_variable(name='kernel', shape=[1, in_channels, filters])
-    bias = tf.get_variable(name='bias', shape=[filters])
-    return tf.matmul(net, kernel[0]) + bias
+    if use_bias:
+        bias = tf.get_variable(name='bias', shape=[filters])
+        return tf.matmul(net, kernel[0]) + bias
+    return tf.matmul(net, kernel[0])
 
 
 def fast_conv1d(current, filters, kernel_size, dilations, batch_size):
@@ -200,7 +205,7 @@ def fast_condition(net, condition_t):
     '''
     if condition_t is not None:
         out_channels = net.shape.as_list()[-1]
-        net += linear(condition_t, out_channels)
+        net += linear(condition_t, out_channels, use_bias=False)
     return net
 
 
