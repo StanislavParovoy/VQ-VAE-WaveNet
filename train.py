@@ -2,36 +2,30 @@ from model import VQVAE
 from Encoder.encoder import *
 from Decoder.decoder import *
 from dataset import *
-from utils import display_time
+from utils import display_time, suppress_tf_warning
 import tensorflow as tf
 import time, os, sys, json
 from argparse import ArgumentParser
 
-if tf.__version__ == '1.14.0':
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-else:
-    tf.logging.set_verbosity(tf.logging.ERROR)
+suppress_tf_warning()
 
 parser = ArgumentParser()
-parser.add_argument('dataset',
+parser.add_argument('-dataset', default='VCTK', type=str,
                     help='VCTK or LibriSpeech',
                     metavar='DATASET')
-parser.add_argument('-m', default=1, type=int,
+parser.add_argument('-m', default=0, type=int,
                     dest='in_memory', metavar='bool',
                     help='if loading data in memory')
-parser.add_argument('-l', default=6144, type=int,
+parser.add_argument('-l', default=6656, type=int,
                     dest='max_len', metavar='int',
                     help='number of samples one audio will contain')
 parser.add_argument('-e', default=1, type=int,
                     dest='num_epochs', metavar='int',
                     help='number of epoch to train')
-parser.add_argument('-b', default=4, type=int,
+parser.add_argument('-b', default=8, type=int,
                     dest='batch_size', metavar='int',
                     help='batch size')
-parser.add_argument('-log', default='logs', 
-                    dest='log_path', metavar='string',
-                    help='path to save logs for tensorboard')
-parser.add_argument('-interval', default=100, type=int, 
+parser.add_argument('-interval', default=200, type=int, 
                     dest='interval', metavar='int',
                     help='save log every interval step')
 parser.add_argument('-restore',
@@ -85,7 +79,6 @@ model = VQVAE(model_args)
 model.build(learning_rate_schedule=schedule)
 
 sess = tf.Session()
-writer = tf.summary.FileWriter(args.log_path, sess.graph)
 saver = tf.train.Saver()
 
 if args.restore_path is not None:
@@ -101,6 +94,8 @@ save_path = args.save_path
 save_dir, save_name = save_path.split('/')
 if not os.path.isdir(save_dir):
     os.mkdir(save_dir)
+
+writer = tf.summary.FileWriter(save_dir, sess.graph)
 
 for e in range(args.num_epochs): 
     sess.run(dataset.init)

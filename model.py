@@ -29,19 +29,23 @@ class VQVAE(object):
                 tf.summary.histogram('speaker_embedding_u', u)
                 tf.summary.histogram('speaker_embedding_v', v)
             self._print('input h:', self.h)
+        self.ema = tf.train.ExponentialMovingAverage(decay=0.999)
 
 
     def _build_encoder(self):
         self.z_e = self.encoder.build(self.x)
-        tf.summary.histogram('z_e', self.z_e)
         self._print('z_e:', self.z_e)
+        u, v = tf.nn.moments(self.z_e, [-1])
+        tf.summary.histogram('z_e_u', u)
+        tf.summary.histogram('z_e_v', v)
+        tf.summary.histogram('z_e', self.z_e)
 
 
     def _build_embedding_space(self):
         latent_dim = self.z_e.get_shape().as_list()[-1]
         self.embedding = tf.get_variable(name='embedding', 
                                          shape=[self.k, latent_dim], 
-                                         initializer=tf.initializers.truncated_normal(mean=0.1, stddev=1.2))
+                                         initializer=tf.uniform_unit_scaling_initializer(1.7))
         u, v = tf.nn.moments(self.embedding, [-1])
         tf.summary.histogram('embedding_u', u)
         tf.summary.histogram('embedding_v', v)
@@ -60,7 +64,7 @@ class VQVAE(object):
         self.q_z_x = tf.argmin(distances, axis=-1)
         tf.summary.histogram('q(z|x)', self.q_z_x)
         self._print('q(z|x):', self.q_z_x)
-        self.e_k = tf.gather(params=self.embedding, indices=self.q_z_x)
+        self.e_k = tf.nn.embedding_lookup(self.embedding, self.q_z_x)
         tf.summary.histogram('e_k', self.e_k)
 
         # this should pass gradient from z_q to z_e
@@ -77,39 +81,28 @@ class VQVAE(object):
         self._print('labels:', self.labels)
 
 
-    def _build_decoder_generator(self, batch_size):
-        input_t = tf.placeholder(tf.float32, [batch_size, 1])
-        channels = self.z_q.shape.as_list()[-1]
-        local_condition_t = tf.placeholder(tf.float32, [batch_size, channels])
-        self.decoder.build_generator(input_t=input_t,
-                                     local_condition_t=local_condition_t,
-                                     global_condition_t=self.h)
+    def _build_decoder_generator(self):
+        self.encoding = self.decoder.build_generator(local_condition=self.z_q,
+                                                     global_condition=self.h)
 
 
     def _compute_loss(self):
         loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                                    labels=self.labels,
-                                    logits=self.x_z_q)
+                     labels=self.labels,
+                     logits=self.x_z_q)
         self.reconstruction_loss = tf.reduce_mean(loss, axis=0)
         tf.summary.scalar('reconstruction_loss', self.reconstruction_loss)
 
-        self.regularisation_loss = \
-            tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-        tf.summary.scalar('regularisation_loss', self.regularisation_loss)
-
-        self.loss = self.reconstruction_loss + self.regularisation_loss
+        self.loss = self.reconstruction_loss
 
         if self.use_vq:
             self.vq_loss = tf.reduce_mean((tf.stop_gradient(self.z_e) - self.e_k) ** 2)
             tf.summary.scalar('vq_loss', self.vq_loss)
 
-            self.commitment_loss = self.beta * \
-                tf.reduce_mean((self.z_e - tf.stop_gradient(self.e_k)) ** 2)
+            self.commitment_loss = self.beta * tf.reduce_mean((self.z_e - tf.stop_gradient(self.e_k)) ** 2)
             tf.summary.scalar('commitment_loss', self.commitment_loss)
 
             self.loss += self.vq_loss + self.commitment_loss
-
-        self.summary = tf.summary.merge_all()
 
 
     def _build_optimiser(self, learning_rate_schedule):
@@ -119,8 +112,21 @@ class VQVAE(object):
             self.lr = tf.cond(
                 tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
 
-        optimiser = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimiser.minimize(self.loss, global_step=self.global_step)
+        self.optimiser = tf.train.AdamOptimizer(self.lr)
+
+        # self.train_op = optimiser.minimize(self.loss, global_step=self.global_step)
+        self.train_op = tf.contrib.layers.optimize_loss(
+                        loss=self.loss,
+                        global_step=self.global_step,
+                        learning_rate=self.lr, 
+                        optimizer=self.optimiser,
+                        summaries=['gradients'])
+    
+        trainable_variables = tf.trainable_variables()
+        with tf.control_dependencies([self.train_op]):
+            self.train_op = self.ema.apply(trainable_variables)
+    
+        self.summary = tf.summary.merge_all()
 
 
     def _build(self):
@@ -139,12 +145,15 @@ class VQVAE(object):
         self._build()
         with tf.variable_scope('decoder'):
             self._build_decoder()
-        self._compute_loss()
-        self._build_optimiser(learning_rate_schedule)
+        with tf.variable_scope('optimiser'):
+            self._compute_loss()
+            self._build_optimiser(learning_rate_schedule)
 
 
-    def build_generator(self, batch_size):
+    def build_generator(self):
         self._build()
         with tf.variable_scope('decoder'):
-            self._build_decoder_generator(batch_size)
+            self._build_decoder_generator()
+        with tf.variable_scope('optimiser'):
+            self.ema.apply(tf.trainable_variables())
 
