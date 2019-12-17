@@ -43,8 +43,12 @@ sess = tf.Session()
 wav = sess.run(wav)
 length = wav.shape[1]
 
-speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
-speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
+if args.speakers[0][0] == 'p': # VCTK
+    speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
+    speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
+else: # LibriSpeech
+    speaker_to_int = get_speaker_to_int('data/librispeech_speakers.txt')
+    speaker = [[0 for _ in range(251)] for _ in range(len(args.speakers))]
 for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
 speaker = np.expand_dims(speaker, 1)

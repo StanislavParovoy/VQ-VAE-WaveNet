@@ -43,7 +43,7 @@ class Dataset():
         wav = tf.random_crop(wav, [max_len, 1])
         return wav, speaker
 
-    def make_iterator(self, relative_path, in_memory, max_len, sr, batch_size, depth):
+    def make_iterator(self, relative_path, in_memory, max_len, sr, batch_size):
         filename = relative_path + self.filename
         speaker_file = relative_path + self.speaker_file
         data_dir = relative_path + self.data_dir
@@ -70,7 +70,7 @@ class Dataset():
         iterator = dataset.make_initializable_iterator()
         self.init = iterator.initializer
         self.x, y = iterator.get_next()
-        self.y = tf.one_hot(y, depth=depth, dtype=tf.float32)
+        self.y = tf.one_hot(y, depth=len(self.speaker_to_int), dtype=tf.float32)
         self.num_batches = np.ceil(total / batch_size)
 
     def _load(self, max_len, abs_name=''):
@@ -117,7 +117,7 @@ class LibriSpeech(Dataset):
         self.speaker_file = 'librispeech_speakers.txt'
         self.data_dir = ''
         self.split_func = lambda s: s.split('/')[-1].split('-', 1)[0]
-        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size, depth=40)
+        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
 
 
 class VCTK(Dataset):
@@ -129,5 +129,5 @@ class VCTK(Dataset):
         self.speaker_file = 'vctk_speakers.txt'
         self.data_dir = 'VCTK-Corpus/wav48/'
         self.split_func = lambda s: s.split('/')[0]
-        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size, depth=109)
+        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
 
