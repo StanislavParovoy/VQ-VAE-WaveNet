@@ -6,6 +6,10 @@ This is a TensorFlow implementation of vqvae with wavenet decoder, based on http
 ### Dependencies:
 TensorFlow r1.12 / r1.14, numpy, librosa, scipy, tqdm
 
+### Results
+
+The folder `results` contains training log & saved embedding space & reconstructed audio, e.g. folder `p225_001` contains generated audio with different speakers for audio `p225_001.wav`. 
+
 ### Model
 
 #### Encoder
@@ -74,11 +78,7 @@ example usage:
 `python3 visualise.py -embedding embedding_110640.npy -speaker speaker_embedding_110640.npy -save embeddings`
 then upload tsv files in folder `embeddings` to the website.
 
-### Results
-
-The folder `results` contains a folder named by hyper parameters, containing training log & saved embedding space & reconstructed audio, e.g. folder `p225_001` contains generated audio with different speakers for audio `p225_001.wav`. 
-
-Note that the speaker embedding separates gender almost perfectly (upload the vec and meta files to http://projector.tensorflow.org, then search for `#f#` or `#m#`). Also `q(z|x)` did slowly converge to the assumed uniform prior distribution.
+Note that the speaker embedding separated gender almost perfectly (upload the vec and meta files to http://projector.tensorflow.org, then search for `#f#` or `#m#`). Also `q(z|x)` did slowly converge to the assumed uniform prior distribution.
 
 ### Micellaneous
 
