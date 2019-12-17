@@ -88,7 +88,7 @@ if parameters['speaker_embedding'] > 0:
     embedding = sess.run(model.speaker_embedding)
     np.save(save_path + '/speaker_embedding_%d.npy' % gs, embedding)
 
-audio = np.zeros([batch_size], dtype=np.float32)
+audio = np.zeros([batch_size], dtype=np.int32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(wavenet.init_ops)
 

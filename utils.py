@@ -1,8 +1,16 @@
 from mu_law_ops import mu_law_decode_np
 import numpy as np
+import tensorflow as tf
 
 
-def sample(pdf):
+def suppress_tf_warning():
+    if tf.__version__ in {'1.14.0', '1.15.0'}:
+        tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+    else:
+        tf.logging.set_verbosity(tf.logging.ERROR)
+
+
+def sample(pdf, quantization_channels=256):
     ''' sample from pdf
     args:
         pdf: pdf, shape [b, quantization_channels]
@@ -15,16 +23,25 @@ def sample(pdf):
     pred = np.zeros(batch_size, dtype=np.float32)
     for i, prob in enumerate(sample_prob):
         pred[i] = cdf[i].searchsorted(prob)
-    decoded = mu_law_decode_np(pred)
-    return decoded
+    decoded = mu_law_decode_np(pred, quantization_channels=quantization_channels)
+    return decoded, pred.astype(np.int32)
 
 
-def decode(predictions, mode='sample'):
+def decode(predictions, mode='sample', quantization_channels=256):
+    ''' decode from raw output
+    args:
+        mode: either sample or greedy
+    returns:
+        a tuple of:
+            decoded of shape [b] in range [-1, 1], this is for writing audio file
+            pred of shape [b] in range [0, quantization_channels], 
+                this is for feeding next audio input for wavenet
+    '''
     if mode == 'sample':
         return sample(predictions)
     elif mode == 'greedy':
         pred = np.argmax(predictions, axis=-1)
-        return mu_law_decode_np(pred)
+        return mu_law_decode_np(pred, quantization_channels=quantization_channels), pred
     else:
         raise NotImplementedError("decode mode %s not implemented" % mode)
 

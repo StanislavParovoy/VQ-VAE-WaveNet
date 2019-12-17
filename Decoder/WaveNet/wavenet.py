@@ -30,20 +30,19 @@ class Wavenet():
             wavenet output, same shape as inputs
         '''
 
-        inputs = mu_law_encode(inputs)
+        inputs = mu_law_encode(inputs, to_int=True)
+        self.labels = tf.reshape(inputs, [-1])
+
+        inputs = tf.one_hot(inputs, depth=self.args['quantization_channels'], dtype=tf.float32)
+        inputs = tf.squeeze(inputs, axis=-2)
         self._print('wavenet inputs:', inputs.shape)
-        
-        # [-1, 1] -> [0, 255]
-        mu = self.args['quantization_channels'] - 1
-        labels = tf.cast((inputs + 1) / 2 * mu + 0.5, tf.int32)
-        self.labels = tf.reshape(labels, [-1])
 
         inputs = shift_right(inputs)
 
         # preprocess layer
         with tf.variable_scope('preprocess'):
             args = self.args['preprocess']
-            net = conv1d_v2(inputs, args['filters'], args['kernel_size'])
+            net = conv1d_v2(inputs, args['filters'], args['kernel_size'], log=True)
             self._print('net preprocess:', net.shape)
 
         if local_condition is not None:
@@ -53,7 +52,7 @@ class Wavenet():
 
         # skip starts from preprocess
         with tf.variable_scope('skip'):
-            skip = conv1d_v2(net, self.args['skip_filters'], kernel_size=1)
+            skip = conv1d_v2(net, self.args['skip_filters'], kernel_size=1, log=True)
             self._print('skip start:', skip.shape)
 
         # residual stacks
@@ -88,14 +87,14 @@ class Wavenet():
             if local_condition is not None:
                 with tf.variable_scope('local_condition'):
                     net = add_condition(net, local_condition)
+            if global_condition is not None:
                 with tf.variable_scope('global_condition'):
                     net = add_condition(net, global_condition)
-                self._print('net postprocess 1 condition:', net.shape)
 
         # postprocess layer 2, outputs logits
         with tf.variable_scope('postprocess2'):
             net = tf.nn.relu(net)
-            net = conv1d_v2(net, self.args['quantization_channels'], kernel_size=1)
+            net = conv1d_v2(net, self.args['quantization_channels'], kernel_size=1, log=True)
             self._print('net postprocess 2:', net.shape)
 
         self.logits = tf.reshape(net, [-1, self.args['quantization_channels']])
@@ -110,8 +109,10 @@ class Wavenet():
         returns:
             value at final layer of wavenet (at second time stamp)
         '''
+
         self.input_t = input_t
-        input_t = mu_law_encode(input_t)
+        input_t = tf.one_hot(input_t, depth=self.args['quantization_channels'], dtype=tf.float32)
+
         init_ops = []
         push_ops = []
 
@@ -170,7 +171,6 @@ class Wavenet():
         self.push_ops = push_ops
         self.predictions = tf.nn.softmax(net)
         self.local_condition_t = local_condition_t
-        return net
 
 
     def get_loss(self):

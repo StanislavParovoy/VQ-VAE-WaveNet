@@ -11,11 +11,9 @@ class Encoder_64():
         self.latent_dim = latent_dim
 
     def build(self, net):
-        net = mu_law_encode(net)
-        net = shift_right(net)
         for i in range(6):
             net = tkl.Conv1D(filters=768,
-                            kernel_size=4, 
+                            kernel_size=5, 
                             strides=2,
                             padding='same',
                             activation='relu')(net)
