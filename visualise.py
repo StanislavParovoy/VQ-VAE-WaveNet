@@ -30,7 +30,7 @@ if args.speaker:
 
 for file, id_f in zip(total, meta):
     emb = np.load(file)
-    file = file.strip('.npy')
+    file = file.split('/')[-1].strip('.npy')
     out_v = io.open('%s/%s_vecs.tsv'%(args.save, file), 'w', encoding='utf-8')
     out_m = io.open('%s/%s_meta.tsv'%(args.save, file), 'w', encoding='utf-8')
     for i, vec in enumerate(emb):
