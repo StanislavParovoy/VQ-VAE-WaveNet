@@ -50,7 +50,7 @@ class WavenetDecoder():
             local_condition = concat(local_condition, global_condition)
 
         batch_size, _, channels = local_condition.get_shape().as_list()
-        input_t = tf.placeholder(tf.int32, [batch_size])
+        input_t = tf.placeholder(tf.float32, [batch_size, 1])
         local_condition_t = tf.placeholder(tf.float32, [batch_size, channels])
 
         self.wavenet = Wavenet(self.args_file)

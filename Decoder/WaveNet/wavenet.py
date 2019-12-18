@@ -29,15 +29,14 @@ class Wavenet():
         returns:
             wavenet output, same shape as inputs
         '''
-
-        inputs = mu_law_encode(inputs, to_int=True)
-        self.labels = tf.reshape(inputs, [-1])
-
-        inputs = tf.one_hot(inputs, depth=self.args['quantization_channels'], dtype=tf.float32)
-        inputs = tf.squeeze(inputs, axis=-2)
-        self._print('wavenet inputs:', inputs.shape)
-
+        
+        self.labels = mu_law_encode(inputs, to_int=True)
+        self.labels = tf.reshape(self.labels, [-1]) 
+        
         inputs = shift_right(inputs)
+        inputs = mu_law_encode(inputs, to_int=False)
+   
+        self._print('wavenet inputs:', inputs.shape)
 
         # preprocess layer
         with tf.variable_scope('preprocess'):
@@ -111,7 +110,6 @@ class Wavenet():
         '''
 
         self.input_t = input_t
-        input_t = tf.one_hot(input_t, depth=self.args['quantization_channels'], dtype=tf.float32)
 
         init_ops = []
         push_ops = []
@@ -181,25 +179,20 @@ class Wavenet():
 
         self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
 
-        # self.lr = tf.train.exponential_decay(
-        #                     learning_rate=tf.Variable(0.0001),
-        #                     global_step=self.global_step,
-        #                     decay_steps=10000,
-        #                     decay_rate=0.96)
         learning_rate_schedule = {
-            0: 0.0001,
-            30000: 0.00008,
-            40000: 0.00006,
-            60000: 0.00004,
-            80000: 0.00002,
-            100000: 0.00001
+            0: 0.0004,
+            40000: 0.0002,
+            80000: 0.0001,
+            120000: 0.00008,
+            160000: 0.00004,
+            200000: 0.00002
         }
         self.lr = tf.constant(learning_rate_schedule[0])
-        for key, value in learning_rate_schedule.iteritems():
+        for key, value in learning_rate_schedule.items():
             self.lr = tf.cond(
                 tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
         optimiser = tf.train.AdamOptimizer(self.lr)
-        self.opt = optimiser.minimize(self.loss, global_step=self.global_step)
+        self.train_op = optimiser.minimize(self.loss, global_step=self.global_step)
         tf.summary.scalar('loss', self.loss)
         self.summary = tf.summary.merge_all()
 

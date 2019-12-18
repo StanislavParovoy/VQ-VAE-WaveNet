@@ -46,9 +46,11 @@ length = wav.shape[1]
 if args.speakers[0][0] == 'p': # VCTK
     speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
     speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
+    num_speakers = 109
 else: # LibriSpeech
     speaker_to_int = get_speaker_to_int('data/librispeech_speakers.txt')
     speaker = [[0 for _ in range(251)] for _ in range(len(args.speakers))]
+    num_speakers = 251
 for i, s in enumerate(args.speakers):
     speaker[i][speaker_to_int[s]] = 1
 speaker = np.expand_dims(speaker, 1)
@@ -70,7 +72,8 @@ model_args = {
     'beta': parameters['beta'],
     'verbose': parameters['verbose'],
     'use_vq': parameters['use_vq'],
-    'speaker_embedding': parameters['speaker_embedding']
+    'speaker_embedding': parameters['speaker_embedding'],
+    'num_speakers': num_speakers
 }
 
 model = VQVAE(model_args)
@@ -92,7 +95,7 @@ if parameters['speaker_embedding'] > 0:
     embedding = sess.run(model.speaker_embedding)
     np.save(save_path + '/speaker_embedding_%d.npy' % gs, embedding)
 
-audio = np.zeros([batch_size], dtype=np.int32)
+audio = np.zeros([batch_size, 1], dtype=np.float32)
 to_write = np.zeros([batch_size, length], dtype=np.float32)
 sess.run(wavenet.init_ops)
 
@@ -100,8 +103,9 @@ ratio = length // encoding.shape[1]
 for i in tqdm(range(length)):
     probs, _ = sess.run([wavenet.predictions, wavenet.push_ops], 
         {wavenet.input_t: audio, wavenet.local_condition_t: encoding[:, i // ratio]})
-    decoded, audio = decode(probs, mode=args.mode, quantization_channels=wavenet.args['quantization_channels'])
+    decoded = decode(probs, mode=args.mode, quantization_channels=wavenet.args['quantization_channels'])
     to_write[:, i] = decoded
+    audio = np.expand_dims(decoded, -1)
 
 for i, s in enumerate(args.speakers):
     wavfile.write(save_path + '/%d_%s.wav'%(gs, s), 16000, to_write[i])

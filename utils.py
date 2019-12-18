@@ -24,7 +24,7 @@ def sample(pdf, quantization_channels=256):
     for i, prob in enumerate(sample_prob):
         pred[i] = cdf[i].searchsorted(prob)
     decoded = mu_law_decode_np(pred, quantization_channels=quantization_channels)
-    return decoded, pred.astype(np.int32)
+    return decoded
 
 
 def decode(predictions, mode='sample', quantization_channels=256):
@@ -41,7 +41,7 @@ def decode(predictions, mode='sample', quantization_channels=256):
         return sample(predictions)
     elif mode == 'greedy':
         pred = np.argmax(predictions, axis=-1)
-        return mu_law_decode_np(pred, quantization_channels=quantization_channels), pred
+        return mu_law_decode_np(pred, quantization_channels=quantization_channels)
     else:
         raise NotImplementedError("decode mode %s not implemented" % mode)
 
