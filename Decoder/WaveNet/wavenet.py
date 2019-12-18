@@ -110,6 +110,7 @@ class Wavenet():
         '''
 
         self.input_t = input_t
+        input_t = mu_law_encode(self.input_t)
 
         init_ops = []
         push_ops = []
