@@ -104,9 +104,12 @@ def get_speaker_info(speaker_to_int, info_path):
     with open(info_path) as file:
         lines = file.readlines()
     speaker_info = {}
+    is_vctk = '|' not in lines[0]
     for line in lines[1:]:
         speaker, info = line.split(maxsplit=1)
-        speaker_info[speaker_to_int['p' + speaker]] = '#'.join(info.split())
+        speaker = is_vctk * 'p' + speaker
+        if speaker in speaker_to_int:
+            speaker_info[speaker_to_int[speaker]] = '#'.join(info.split())
     for speaker_int in speaker_to_int.values():
         if speaker_int not in speaker_info:
             speaker_info[speaker_int] = 'missing_info'

@@ -57,7 +57,7 @@ class Dataset():
             gen = self.generator(data, speakers)
             dataset = tf.data.Dataset.from_generator(gen, 
                 (tf.float32, tf.int32), ([max_len, 1], [1]))
-            dataset = dataset.shuffle(total)
+            dataset = dataset.shuffle(65536)
         else:
             speakers = self._get_speakers()
             total = len(self.all_files)

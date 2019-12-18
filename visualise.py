@@ -10,6 +10,9 @@ parser.add_argument('-embedding',
 parser.add_argument('-speaker', 
                     dest='speaker',
                     help='speaker embedding space')
+parser.add_argument('-dataset', default='VCTK',
+                    dest='dataset',
+                    help='VCTK or LibriSpeech')
 parser.add_argument('-save', 
                     dest='save',
                     help='save to folder')
@@ -24,8 +27,14 @@ if args.embedding:
     meta.append(lambda i: str(i+1) + '\n')
 if args.speaker:
     total.append(args.speaker)
-    speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
-    speaker_info = get_speaker_info(speaker_to_int, 'data/vctk_speaker_info.txt')
+    if args.dataset == 'VCTK':
+        speaker_path = 'data/vctk_speakers.txt'
+        info_path = 'data/vctk_speaker_info.txt'
+    elif args.dataset == 'LibriSpeech':
+        speaker_path = 'data/librispeech_speakers.txt'
+        info_path = 'data/librispeech_speaker_info.txt'
+    speaker_to_int = get_speaker_to_int(speaker_path)
+    speaker_info = get_speaker_info(speaker_to_int, info_path)
     meta.append(lambda i: speaker_info[i] + '\n')
 
 for file, id_f in zip(total, meta):
