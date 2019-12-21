@@ -47,12 +47,17 @@ if args.speakers[0][0] == 'p': # VCTK
     speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
     speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
     num_speakers = 109
+elif args.speakers[0][0].lower() == 's': # aishell
+    speaker_to_int = get_speaker_to_int('data/aishell_speakers.txt')
+    speaker = [[0 for _ in range(340)] for _ in range(len(args.speakers))]
+    num_speakers = 340
 else: # LibriSpeech
     speaker_to_int = get_speaker_to_int('data/librispeech_speakers.txt')
     speaker = [[0 for _ in range(251)] for _ in range(len(args.speakers))]
     num_speakers = 251
 for i, s in enumerate(args.speakers):
-    speaker[i][speaker_to_int[s]] = 1
+    if s.lower() != 'None':
+        speaker[i][speaker_to_int[s]] = 1
 speaker = np.expand_dims(speaker, 1)
 
 with open(args.parameter_path) as file:
@@ -108,5 +113,6 @@ for i in tqdm(range(length)):
     audio = np.expand_dims(decoded, -1)
 
 for i, s in enumerate(args.speakers):
+    s = 'no_speaker' if s == 'None' else s
     wavfile.write(save_path + '/%d_%s.wav'%(gs, s), 16000, to_write[i])
 

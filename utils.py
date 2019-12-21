@@ -77,7 +77,7 @@ def write_speaker_to_int(dataset='vctk'):
         file_list = 'librispeech_train_clean_100.txt'
         write_as = 'librispeech_speakers.txt'
     else:
-        assert 1 == 0, 'not implemented'
+        raise NotImplementedError("dataset %s not implemented" % dataset)
 
     speaker_to_int = {}
     with open(file_list) as file:

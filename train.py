@@ -11,7 +11,7 @@ suppress_tf_warning()
 
 parser = ArgumentParser()
 parser.add_argument('-dataset', default='VCTK', type=str,
-                    help='VCTK or LibriSpeech',
+                    help='VCTK or LibriSpeech or Aishell',
                     metavar='DATASET')
 parser.add_argument('-m', default=0, type=int,
                     dest='in_memory', metavar='bool',

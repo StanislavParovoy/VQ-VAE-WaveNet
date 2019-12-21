@@ -71,7 +71,7 @@ class Dataset():
         iterator = dataset.make_initializable_iterator()
         self.init = iterator.initializer
         self.x, y = iterator.get_next()
-        self.y = tf.one_hot(y, depth=num_speakers, dtype=tf.float32)
+        self.y = tf.one_hot(y, depth=self.num_speakers, dtype=tf.float32)
         self.num_batches = np.ceil(total / batch_size)
 
     def _load(self, max_len, abs_name=''):
@@ -130,5 +130,17 @@ class VCTK(Dataset):
         self.speaker_file = 'vctk_speakers.txt'
         self.data_dir = 'VCTK-Corpus/wav48/'
         self.split_func = lambda s: s.split('/')[0]
+        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
+
+
+class Aishell(Dataset):
+    def __init__(self, batch_size=1, in_memory=True, max_len=5120, sr=16000, 
+        relative_path=''):
+        super(Aishell, self).__init__()
+
+        self.filename = 'aishell_train.txt'
+        self.speaker_file = 'aishell_speakers.txt'
+        self.data_dir = ''
+        self.split_func = lambda s: s.split('/train/')[1].split('/')[0]
         self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
 
