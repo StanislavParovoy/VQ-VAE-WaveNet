@@ -56,7 +56,7 @@ else: # LibriSpeech
     speaker = [[0 for _ in range(251)] for _ in range(len(args.speakers))]
     num_speakers = 251
 for i, s in enumerate(args.speakers):
-    if s.lower() != 'None':
+    if s.lower() != 'none':
         speaker[i][speaker_to_int[s]] = 1
 speaker = np.expand_dims(speaker, 1)
 
