@@ -69,7 +69,7 @@ else:
     raise NotImplementedError("encoder %s not implemented" % args.encoder)
 decoder = WavenetDecoder(parameters['wavenet_parameters'])
 model_args = {
-    'x': wav,
+    'x': tf.constant(wav),
     'speaker': tf.constant(speaker, dtype=np.float32),
     'encoder': encoder,
     'decoder': decoder,
