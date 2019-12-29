@@ -17,7 +17,6 @@ class Dataset():
     def read_files(self, filename):
         with open(filename) as file:
             files = file.readlines()
-        total = len(files)
         np.random.shuffle(files)
         return [f.strip() for f in files]
 
@@ -31,19 +30,39 @@ class Dataset():
         # Note: indices can be an empty array, if the whole audio was silence.
         return audio[indices[0]:indices[-1]] if indices.size else audio[0:0]
 
-    def generator(self, data, labels):
+    def generator(self, max_len, data_dir, sr):
+        indices = list(range(len(self.all_files)))
+        # if sr is 16k, use gen, since wavfile is way faster than librosa
         def gen():
-            for x, y in zip(data, labels):
-                yield x, y
-        return gen
+            while True:
+                i = np.random.choice(indices)
+                filename = self.all_files[i]
+                _, wav = wavfile.read(data_dir + filename)
+                wav = (wav + 0.5) / 32767.5
+                start = np.random.randint(low=0, 
+                                          high=len(wav) - max_len)
+                wav = wav[start: start + max_len]
+                wav = np.reshape(wav, [max_len, 1])
+                speaker = self.split_func(filename)
+                speaker_id = np.reshape(self.speaker_to_int[speaker], [1])
+                yield wav, speaker_id
+        # if sr is other than 16k, force librosa to read as 16k
+        # otherwise you should modify the corresponding receptive field
+        def gen_sr():
+            while True:
+                i = np.random.choice(indices)
+                filename = self.all_files[i]
+                wav, _ = librosa.load(data_dir + filename, sr=16000)
+                start = np.random.randint(low=0, 
+                                          high=len(wav) - max_len)
+                wav = wav[start: start + max_len]
+                wav = np.reshape(wav, [max_len, 1])
+                speaker = self.split_func(filename)
+                speaker_id = np.reshape(self.speaker_to_int[speaker], [1])
+                yield wav, speaker_id
+        return gen if sr == 16000 else gen_sr
 
-    def tf_read(self, filename, speaker, max_len, sr, abs_name=''):
-        contents = tf.io.read_file(abs_name + filename)
-        wav = tf.contrib.ffmpeg.decode_audio(contents, 'wav', sr, 1)
-        wav = tf.random_crop(wav, [max_len, 1])
-        return wav, speaker
-
-    def make_iterator(self, relative_path, in_memory, max_len, sr, batch_size):
+    def make_iterator(self, relative_path, max_len, sr, batch_size):
         filename = relative_path + self.filename
         speaker_file = relative_path + self.speaker_file
         data_dir = relative_path + self.data_dir
@@ -52,28 +71,19 @@ class Dataset():
         self.num_speakers = len(self.speaker_to_int)
         self.all_files = self.read_files(filename)
 
-        if in_memory:
-            data, total, speakers = self._load(max_len, data_dir)
-            gen = self.generator(data, speakers)
-            dataset = tf.data.Dataset.from_generator(gen, 
-                (tf.float32, tf.int32), ([max_len, 1], [1]))
-            dataset = dataset.shuffle(65536)
-        else:
-            speakers = self._get_speakers()
-            total = len(self.all_files)
-            dataset = tf.data.Dataset.from_tensor_slices((self.all_files, speakers))
-            dataset = dataset.shuffle(total)
-            dataset = dataset.map(
-                map_func=lambda x, y: self.tf_read(x, y, max_len, sr, data_dir), 
-                num_parallel_calls=4)
+        gen = self.generator(max_len, data_dir, sr)
+        dataset = tf.data.Dataset.from_generator(gen, 
+            (tf.float32, tf.int32), ([max_len, 1], [1]))
+        total = len(self.all_files)
 
         dataset = dataset.batch(batch_size, drop_remainder=False)
+        # dataset = dataset.prefetch(4)
         iterator = dataset.make_initializable_iterator()
         self.init = iterator.initializer
         self.x, y = iterator.get_next()
         self.y = tf.one_hot(y, depth=self.num_speakers, dtype=tf.float32)
-        self.num_batches = np.ceil(total / batch_size)
 
+    # deprecated
     def _load(self, max_len, abs_name=''):
         data = np.zeros([len(self.all_files), max_len, 1], dtype=np.float32)
         speakers = np.zeros([len(self.all_files)], dtype=np.float32)
@@ -100,47 +110,36 @@ class Dataset():
         print('data total:', len(data))
         return data, len(data), speakers
 
-    def _get_speakers(self):
-        speakers = []
-        for file in self.all_files:
-            speaker = self.split_func(file)
-            speaker_id = self.speaker_to_int[speaker]
-            speakers.append(speaker_id)
-        return np.reshape(speakers, [-1, 1])
-
 
 class LibriSpeech(Dataset):
-    def __init__(self, batch_size=1, in_memory=True, max_len=5120, sr=16000, 
-        relative_path=''):
+    def __init__(self, batch_size=1, max_len=5120, sr=16000, relative_path=''):
         super(LibriSpeech, self).__init__()
 
         self.filename = 'librispeech_train_clean_100.txt'
         self.speaker_file = 'librispeech_speakers.txt'
         self.data_dir = ''
         self.split_func = lambda s: s.split('/')[-1].split('-', 1)[0]
-        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
+        self.make_iterator(relative_path, max_len, sr, batch_size)
 
 
 class VCTK(Dataset):
-    def __init__(self, batch_size=1, in_memory=True, max_len=5120, sr=16000, 
-        relative_path=''):
+    def __init__(self, batch_size=1, max_len=5120, sr=48000, relative_path=''):
         super(VCTK, self).__init__()
 
         self.filename = 'vctk_train.txt'
         self.speaker_file = 'vctk_speakers.txt'
         self.data_dir = 'VCTK-Corpus/wav48/'
         self.split_func = lambda s: s.split('/')[0]
-        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
+        self.make_iterator(relative_path, max_len, sr, batch_size)
 
 
 class Aishell(Dataset):
-    def __init__(self, batch_size=1, in_memory=True, max_len=5120, sr=16000, 
-        relative_path=''):
+    def __init__(self, batch_size=1, max_len=5120, sr=16000, relative_path=''):
         super(Aishell, self).__init__()
 
         self.filename = 'aishell_train.txt'
         self.speaker_file = 'aishell_speakers.txt'
         self.data_dir = ''
         self.split_func = lambda s: s.split('/train/')[1].split('/')[0]
-        self.make_iterator(relative_path, in_memory, max_len, sr, batch_size)
+        self.make_iterator(relative_path, max_len, sr, batch_size)
 
