@@ -13,16 +13,13 @@ parser = ArgumentParser()
 parser.add_argument('-dataset', default='VCTK', type=str,
                     help='VCTK or LibriSpeech or Aishell',
                     metavar='DATASET')
-parser.add_argument('-m', default=0, type=int,
-                    dest='in_memory', metavar='bool',
-                    help='if loading data in memory')
-parser.add_argument('-l', default=6656, type=int,
+parser.add_argument('-length', default=6656, type=int,
                     dest='max_len', metavar='int',
                     help='number of samples one audio will contain')
-parser.add_argument('-e', default=1, type=int,
-                    dest='num_epochs', metavar='int',
-                    help='number of epoch to train')
-parser.add_argument('-b', default=8, type=int,
+parser.add_argument('-step', default=1000000, type=int,
+                    dest='num_steps', metavar='int',
+                    help='number of steps to train')
+parser.add_argument('-batch', default=8, type=int,
                     dest='batch_size', metavar='int',
                     help='batch size')
 parser.add_argument('-interval', default=200, type=int, 
@@ -42,16 +39,17 @@ args = parser.parse_args()
 dataset_args = {
     'relative_path': 'data/',
     'batch_size': args.batch_size,
-    'in_memory': args.in_memory,
-    'max_len': args.max_len,
-    'sr': 16000
+    'max_len': args.max_len
 }
 
 if args.dataset == 'VCTK':
     dataset = VCTK(**dataset_args)
 elif args.dataset == 'LibriSpeech':
     dataset = LibriSpeech(**dataset_args)
-num_batches = dataset.num_batches
+elif args.dataset == 'Aishell':
+    dataset = Aishell(**dataset_args)
+else:
+    raise NotImplementedError('dataset %s not implemented' % args.dataset)
 
 with open(args.parameter_path) as file:
     parameters = json.load(file)
@@ -98,32 +96,29 @@ if not os.path.isdir(save_dir):
 
 writer = tf.summary.FileWriter(save_dir, sess.graph)
 
-for e in range(args.num_epochs): 
-    sess.run(dataset.init)
-    step = 0
-    while True:
-        try:
-            step += 1
-            t = time.time()
-
-            if (gs + 1) % args.interval == 0:
-                _, rl, gs, lr, summary = sess.run([model.train_op, 
-                                                   model.reconstruction_loss, 
-                                                   model.global_step, 
-                                                   model.lr,
-                                                   model.summary])
-                writer.add_summary(summary, gs)
-            else:
-                _, rl, gs, lr = sess.run([model.train_op, 
-                                                   model.reconstruction_loss, 
-                                                   model.global_step, 
-                                                   model.lr])
-            t = time.time() - t
-            progress = '\r[e %d step %d] %.2f' % (e, gs, step / num_batches * 100) + '%'
-            loss = ' [recons %.5f] [lr %.5f]' % (rl, lr)
-            second = (num_batches - step) * t
-            print(progress + loss + display_time(t, second), end='')
-        except tf.errors.OutOfRangeError:
-            break
-    saver.save(sess, save_path, global_step=model.global_step)
+sess.run(dataset.init)
+for step in range(1, 1 + args.num_steps): 
+    try:
+        t = time.time()
+        if (gs + 1) % args.interval == 0:
+            _, rl, gs, lr, summary = sess.run([model.train_op, 
+                                               model.reconstruction_loss, 
+                                               model.global_step, 
+                                               model.lr,
+                                               model.summary])
+            writer.add_summary(summary, gs)
+        else:
+            _, rl, gs, lr = sess.run([model.train_op, 
+                                               model.reconstruction_loss, 
+                                               model.global_step, 
+                                               model.lr])
+        t = time.time() - t
+        progress = '\r[step %d] %.2f' % (gs, step / args.num_steps * 100) + '%'
+        loss = ' [recons %.5f] [lr %.5f]' % (rl, lr)
+        second = (args.num_steps - step) * t
+        print(progress + loss + display_time(t, second), end='')
+    except tf.errors.OutOfRangeError:
+        print('\ndataset re-initialised')
+        sess.run(dataset.init)
+saver.save(sess, save_path, global_step=model.global_step)
 
