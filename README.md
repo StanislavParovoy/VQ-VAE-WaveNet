@@ -8,7 +8,7 @@ TensorFlow r1.12 / r1.14, numpy, librosa, scipy, tqdm
 
 ### Results
 
-The folder `results` contains training log & saved embedding space & reconstructed audio, e.g. folder `p225_001` contains generated audio with different speakers for audio `p225_001.wav`. 
+The folder `results` contains some reconstructed audio. Speaker conversion works well, but encoder (local condition) needs some more tuning.
 
 ### Model
 
@@ -50,11 +50,11 @@ To train from custom datasets, refer to `dataset.py` for making iterators.
 
 example usage: 
 
-`python3 train.py VCTK -m 0 -l 6656 -b 8 -e 4 -save saved_model/weights`
-- `-m` whether load data into memory or use tf io
-- `-l` length of segment to use in training, must be multiples of largest dilation rate
-- `-b` batch size
-- `-e` number of epochs
+`python3 train.py -dataset VCTK -length 6656 -batch 8 -step 100000 -save saved_model/weights`
+- `-dataset` `VCTK` or `LibriSpeech`
+- `-length` length of segment to use in training, must be multiples of largest dilation rate, recommended 320ms
+- `-batch` batch size
+- `-step` number of steps to train
 - `-save` save to (e.g. `saved_model/weights`)
 - `-restore` resume from pretrained model (e.g. `saved_model/weights-110640`)
 - `-interval` steps between each log written to disk
@@ -67,7 +67,7 @@ example usage:
 `python3 generate.py -restore saved_model/weights-110640 -audio data/VCTK-Corpus/wav48/p225/p225_001.wav -speakers p225 p226 p227 p228 -mode sample`
 - `-restore` where to restore trained model and save embedding & generated audio
 - `-audio` which audio to use as local condition
-- `-speakers` which speaker(s) to use as global condition
+- `-speakers` which speaker(s) to use as global condition, must be consistent with training data
 - `-mode` method to sample from predicted quantised distribution (`sample`, `greedy`)
 
 ### Visualisation
