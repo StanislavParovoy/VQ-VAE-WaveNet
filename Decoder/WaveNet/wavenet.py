@@ -1,199 +1,148 @@
 import tensorflow as tf
+import tensorflow_probability as tfp
+import parameters
 from Decoder.WaveNet.wavenet_ops import *
-from mu_law_ops import *
-import json
 
+class WaveNet():
+  def __init__(self, args, scope, trainable=True):
+    self.receptive_field = 1 + sum(args['dilations']) * (args['kernel_size'] - 1)
+    print('wavenet %s receptive_field: %d / %d' % (scope, self.receptive_field, parameters.sr))
+    self.scope = scope
+    self.trainable = trainable
+    self.args = args
 
-class Wavenet():
+  def __call__(self, x, condition, h=None):
+    ''' the wavenet decoder
+    args:
+      x: original raw audio, shape [b, t, 1]
+      condition: spectrogram concatenated with speaker embedding
+    returns:
+      wavenet output, same shape as x
+    '''  
+    if h is not None:
+      gc_dim = h.get_shape().as_list()[-1]
+      h = tf.argmax(h, axis=-1)
+      self.gc_embedding = tf.get_variable(
+          name=self.scope + '/gc_embedding', 
+          shape=[gc_dim, parameters.global_embedding_dim],
+          initializer=tf.uniform_unit_scaling_initializer(2.))
+      h = tf.nn.embedding_lookup(self.gc_embedding, h)
+      h = tf.tile(h, [1, condition.get_shape().as_list()[1], 1])
+      condition = tf.concat([condition, h], axis=-1)
 
+    with tf.variable_scope(self.scope):
+      return self.call(x, condition)
 
-    def __init__(self, args_file='wavenet_parameters.json'):
-        with open(args_file) as file:
-            args = json.load(file)
-        assert len(args['dilation_rates']) == args['num_cycles'] * args['num_cycle_layers']
+  def call(self, x, condition): 
+    x = shift_right(x)
 
-        kernel_size = args['kernel_size']
-        self.receptive_field = sum(args['dilation_rates']) * (kernel_size - 1) + 1
-        self.receptive_field += args['preprocess']['kernel_size'] - 1
+    # preprocess layer
+    with tf.variable_scope('preprocess'):
+      x = conv1d(x, filters=self.args['residual_filters'], kernel_size=1, trainable=self.trainable)
 
-        self.args = args
-        self._print = lambda s, t: print(s, t) if args['verbose'] else None
-        self._print('wavenet receptive_field:', self.receptive_field)
+    skip_sum = []
 
+    # residual stacks
+    kernel_size = self.args['kernel_size']
+    dilation_filters = self.args['dilation_filters']
+    skip_filters = self.args['skip_filters']
+    residual_filters = self.args['residual_filters']
 
-    def build(self, inputs, local_condition=None, global_condition=None):
-        ''' the wavenet decoder
-        args:
-            inputs: original raw audio, shape [b, t, 1]
-            local_condition: output from VQVAE, upsampled, shape [b, t, 128 + num_speaker]
-        returns:
-            wavenet output, same shape as inputs
-        '''
-        
-        self.labels = mu_law_encode(inputs, to_int=True)
-        self.labels = tf.reshape(self.labels, [-1]) 
-        
-        inputs = shift_right(inputs)
-        inputs = mu_law_encode(inputs, to_int=False)
-   
-        self._print('wavenet inputs:', inputs.shape)
+    for i, dilations in enumerate(self.args['dilations']):
+      with tf.variable_scope('layer_%d' % (i + 1)):
+        skip, res = residual_stack(x, dilation_filters, kernel_size, dilations, \
+          skip_filters, residual_filters, condition, trainable=self.trainable)
+        skip_sum.append(skip)
+        x += res
+    x = sum(skip_sum)
 
-        # preprocess layer
-        with tf.variable_scope('preprocess'):
-            args = self.args['preprocess']
-            net = conv1d_v2(inputs, args['filters'], args['kernel_size'], log=True)
-            self._print('net preprocess:', net.shape)
+    # postprocess layer 1 with condition
+    with tf.variable_scope('postprocess1'):
+      x = tf.nn.relu(x)
+      x = conv1d(x, filters=self.args['skip_filters'], kernel_size=1, trainable=self.trainable)
 
-        if local_condition is not None:
-            self._print('local_condition:', local_condition.shape)
-        if global_condition is not None:
-            self._print('global_condition:', global_condition.shape)
+    # postprocess layer 2, outputs logits (mean, log_std)
+    filters = 2
+    with tf.variable_scope('postprocess2'):
+      x = tf.nn.relu(x)
+      x = conv1d(x, filters=filters, kernel_size=1, trainable=self.trainable)
+    
+    print('logits:', x.shape)
+    return x
 
-        # skip starts from preprocess
-        with tf.variable_scope('skip'):
-            skip = conv1d_v2(net, self.args['skip_filters'], kernel_size=1, log=True)
-            self._print('skip start:', skip.shape)
+  def compute_loss(self, logits, labels):
+    logits = tf.reshape(logits, [-1, tf.shape(logits)[-1]])
+    labels = tf.reshape(labels, [-1])
+    u = logits[:, 0]
+    log_s = tf.maximum(logits[:, 1], self.args['min_log_scale'])
+    s = tf.exp(log_s)
+    D = tfp.distributions.Normal(loc=u, scale=s)
+    log_prob = D.log_prob(labels)
+    nnl = -tf.reduce_mean(log_prob)
+    tf.summary.scalar('nnl', nnl)
+    tf.summary.histogram('log_s', log_s)
+    print('labels:', labels.shape)
+    print('log_prob:', log_prob.shape)
+    print('loss:', nnl.shape)
+    return nnl
+    '''
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+               labels=labels,
+               logits=logits)
+    loss = tf.reduce_mean(loss, axis=0)
+    '''
 
-        # residual stacks
-        kernel_size = self.args['kernel_size']
-        dilation_filters = self.args['dilation_filters']
-        skip_filters = self.args['skip_filters']
-        residual_filters = self.args['residual_filters']
+  def generate(self, input_t, condition_t, batch_size):
+    ''' performs the fast wavenet generation for one step
+    args:
+        input_t: initial value (at first time stamp)
+        condition_t: initial value of condition_t (at first time stamp)
+    returns:
+        value at final layer of wavenet (at second time stamp)
+    '''
+    with tf.variable_scope(self.scope):
+      return self._generate(input_t, condition_t, batch_size)
 
-        for i, dilations in enumerate(self.args['dilation_rates']):
-            cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
-            layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
-            with tf.variable_scope(cycle_id + '/' + layer_id):
-                skip_out, res_out = residual_stack(net, \
-                    dilation_filters, kernel_size, dilations, \
-                    skip_filters, residual_filters, \
-                    local_condition, global_condition)
+  def _generate(self, input_t, condition_t, batch_size):
+    init_ops = []
+    push_ops = []
 
-                skip += skip_out
-                net += res_out
-                self._print('net_dr_%d:' % dilations, net.shape)
+    # preprocess layer
+    with tf.variable_scope('preprocess'):
+      x, inits, pushes = fast_conv1d(input_t, self.args['residual_filters'], 1, 1, batch_size)
+      init_ops.extend(inits)
+      push_ops.extend(pushes)
 
-        net = skip
-        self._print('skip sum:', net.shape)
+    skip_sum = []
 
-        # postprocess layer 1 with condition
-        with tf.variable_scope('postprocess1'):
-            net = tf.nn.relu(net)
-            net = conv1d_v2(net, self.args['skip_filters'], kernel_size=1)
-            self._print('net postprocess 1:', net.shape)
+    # residual stacks
+    kernel_size = self.args['kernel_size']
+    state_size = self.args['dilation_filters']
+    skip_filters = self.args['skip_filters']
+    residual_filters = self.args['residual_filters']
 
-            # add condition
-            if local_condition is not None:
-                with tf.variable_scope('local_condition'):
-                    net = add_condition(net, local_condition)
-            if global_condition is not None:
-                with tf.variable_scope('global_condition'):
-                    net = add_condition(net, global_condition)
+    for i, dilations in enumerate(self.args['dilations']):
+      with tf.variable_scope('layer_%d' % (i + 1)):
+        skip, res, inits, pushes = fast_residual_stack(
+            x, state_size, kernel_size, dilations, batch_size, \
+            condition_t, skip_filters, residual_filters)
+        skip_sum.append(skip)
+        x += res
+        init_ops.extend(inits)
+        push_ops.extend(pushes)
 
-        # postprocess layer 2, outputs logits
-        with tf.variable_scope('postprocess2'):
-            net = tf.nn.relu(net)
-            net = conv1d_v2(net, self.args['quantization_channels'], kernel_size=1, log=True)
-            self._print('net postprocess 2:', net.shape)
+    x = sum(skip_sum)
 
-        self.logits = tf.reshape(net, [-1, self.args['quantization_channels']])
-        return self.logits, self.labels
+    # postprocess layer 1 with condition
+    with tf.variable_scope('postprocess1'):
+      x = tf.nn.relu(x)
+      x = linear(x, self.args['skip_filters'])
 
+    # postprocess layer 2, outputs logits
+    with tf.variable_scope('postprocess2'):
+      x = tf.nn.relu(x)
+      # x = linear(x, 3 * self.args['num_logistics'])
+      x = linear(x, 2)
 
-    def build_generator(self, input_t, local_condition_t, global_condition_t, batch_size):
-        ''' performs the fast wavenet generation for one step
-        args:
-            input_t: initial value (at first time stamp)
-            condition_t: initial value of condition_t (at first time stamp)
-        returns:
-            value at final layer of wavenet (at second time stamp)
-        '''
-
-        self.input_t = input_t
-        input_t = mu_law_encode(self.input_t)
-
-        init_ops = []
-        push_ops = []
-
-        # preprocess layer
-        with tf.variable_scope('preprocess'):
-            args = self.args['preprocess']
-            current, inits, pushes = \
-                fast_conv1d(input_t, args['filters'], args['kernel_size'], 1, batch_size)
-            init_ops.extend(inits)
-            push_ops.extend(pushes)
-
-        # skip starts from preprocess
-        with tf.variable_scope('skip'):
-            skip = linear(current, filters=self.args['skip_filters'])
-
-        # residual stacks
-        kernel_size = self.args['kernel_size']
-        state_size = self.args['dilation_filters']
-        skip_filters = self.args['skip_filters']
-        residual_filters = self.args['residual_filters']
-
-        for i, dilations in enumerate(self.args['dilation_rates']):
-            cycle_id = 'cycle_%d' % (1 + i // self.args['num_cycle_layers'])
-            layer_id = 'layer_%d' % (1 + i % self.args['num_cycle_layers'])
-            with tf.variable_scope(cycle_id + '/' + layer_id):
-                skip_out, res_out, inits, pushes = fast_residual_stack(
-                    current, state_size, kernel_size, dilations, batch_size, \
-                    local_condition_t, global_condition_t, skip_filters, residual_filters)
-
-                skip += skip_out
-                current += res_out
-                init_ops.extend(inits)
-                push_ops.extend(pushes)
-
-        net = skip
-
-        # postprocess layer 1 with condition
-        with tf.variable_scope('postprocess1'):
-            net = tf.nn.relu(net)
-            net = linear(net, self.args['skip_filters'])
-
-            # add condition
-            if local_condition_t is not None:
-                with tf.variable_scope('local_condition'):
-                    net = fast_condition(net, local_condition_t)
-            if global_condition_t is not None:
-                with tf.variable_scope('global_condition'):
-                    net = fast_condition(net, global_condition_t)
-
-        # postprocess layer 2, outputs logits
-        with tf.variable_scope('postprocess2'):
-            net = tf.nn.relu(net)
-            net = linear(net, self.args['quantization_channels'])
-
-        self.init_ops = init_ops
-        self.push_ops = push_ops
-        self.predictions = tf.nn.softmax(net)
-        self.local_condition_t = local_condition_t
-
-
-    def get_loss(self):
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                                    labels=self.labels,
-                                    logits=self.logits)
-        self.loss = tf.reduce_mean(loss, axis=0)
-
-        self.global_step = tf.Variable(tf.constant(0, dtype=tf.int32), trainable=False)
-
-        learning_rate_schedule = {
-            0: 0.0004,
-            40000: 0.0002,
-            80000: 0.0001,
-            120000: 0.00008,
-            160000: 0.00004,
-            200000: 0.00002
-        }
-        self.lr = tf.constant(learning_rate_schedule[0])
-        for key, value in learning_rate_schedule.items():
-            self.lr = tf.cond(
-                tf.less(self.global_step, key), lambda: self.lr, lambda: tf.constant(value))
-        optimiser = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimiser.minimize(self.loss, global_step=self.global_step)
-        tf.summary.scalar('loss', self.loss)
-        self.summary = tf.summary.merge_all()
+    return init_ops, push_ops, x
 

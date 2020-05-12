@@ -12,7 +12,7 @@ parser.add_argument('-speaker',
                     help='speaker embedding space')
 parser.add_argument('-dataset', default='VCTK',
                     dest='dataset',
-                    help='VCTK or LibriSpeech')
+                    help='VCTK or LibriSpeech or Aishell')
 parser.add_argument('-save', 
                     dest='save',
                     help='save to folder')
@@ -28,11 +28,16 @@ if args.embedding:
 if args.speaker:
     total.append(args.speaker)
     if args.dataset == 'VCTK':
-        speaker_path = 'data/vctk_speakers.txt'
-        info_path = 'data/vctk_speaker_info.txt'
+        speaker_path = 'data/vctk_info/vctk_speakers.txt'
+        info_path = 'data/vctk_info/vctk_speaker_info.txt'
     elif args.dataset == 'LibriSpeech':
-        speaker_path = 'data/librispeech_speakers.txt'
-        info_path = 'data/librispeech_speaker_info.txt'
+        speaker_path = 'data/librispeech_info/librispeech_speakers.txt'
+        info_path = 'data/librispeech_info/librispeech_speaker_info.txt'
+    elif args.dataset == 'Aishell':
+        speaker_path = 'data/aishell_info/aishell_speakers.txt'
+        info_path = 'data/aishell_info/aishell_speaker_info.txt'
+    else: 
+        raise NotImplementedError('dataset %s not implemented' % args.dataset)
     speaker_to_int = get_speaker_to_int(speaker_path)
     speaker_info = get_speaker_info(speaker_to_int, info_path)
     meta.append(lambda i: speaker_info[i] + '\n')

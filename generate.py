@@ -1,118 +1,110 @@
-from model import VQVAE
-from Encoder.encoder import *
-from Decoder.decoder import *
-from utils import get_speaker_to_int, decode, suppress_tf_warning
 import tensorflow as tf
 import numpy as np
-import time, json
+import time, json, librosa
+from vqvae import VQVAE
+from Encoder.encoder import *
+from Decoder.WaveNet.wavenet import *
+from utils import get_speaker_to_int, decode, suppress_tf_warning
+import parameters
 from tqdm import tqdm
 from scipy.io import wavfile
 from argparse import ArgumentParser
 
-suppress_tf_warning()
+def parse_args():
+  parser = ArgumentParser()
+  parser.add_argument('-restore', help='path to weights')
+  parser.add_argument('-audio', help='path to audio')
+  parser.add_argument('-speakers', nargs='+')
+  args = parser.parse_args()
+  return args
 
-parser = ArgumentParser()
-parser.add_argument('-restore',
-                    dest='restore_path',
-                    help='path to weights')
-parser.add_argument('-audio',
-                    dest='audio_path',
-                    help='path to audio')
-parser.add_argument('-speakers', 
-                    nargs='+',
-                    dest='speakers',
-                    help='speaker id')
-parser.add_argument('-mode', default='sample', 
-                    dest='mode',
-                    help='decode mode, sample or greedy')
-parser.add_argument('-params', default='model_parameters.json',
-                    dest='parameter_path', metavar='str',
-                    help='path to parameters file')
+def gaussian_sample(logits):
+  u, log_s = logits[:, 0], logits[:, 1]
+  log_s = logits[:, 1]
+  # log_s = np.maximum(logits[:, 1], -7.)
+  s = np.exp(log_s)
+  b = logits.shape[0]
+  samples = np.random.normal(loc=u, scale=s, size=b)
+  samples = np.maximum(np.minimum(samples, 1), -1)
 
-args = parser.parse_args()
-gs = int(args.restore_path.split('-')[-1])
-batch_size = len(args.speakers)
+  q = (2**16) / 2
+  samples = np.floor(samples * q).astype(np.int32)
+  samples = samples.astype(np.float32) / q
+  return samples  
 
-content = tf.io.read_file(args.audio_path)
-wav = tf.contrib.ffmpeg.decode_audio(content, 'wav', 16000, 1)
-# 512 is the largest dilation rate; change as needed
-wav = tf.reshape(wav[:tf.shape(wav)[0] // 512 * 512, :], [1, -1, 1])
-wav = tf.tile(wav, [batch_size, 1, 1])
+def main():
+  args = parse_args()
+  batch_size = len(args.speakers)
 
-sess = tf.Session()
-wav = sess.run(wav)
-length = wav.shape[1]
+  wav, _ = librosa.load(args.audio, sr=parameters.sr)
+  # 512 is the largest dilation rate; change as needed
+  wav = tf.reshape(wav[:wav.shape[0] // 512 * 512], [1, -1, 1])
+  wav = tf.tile(wav, [batch_size, 1, 1])
 
-if args.speakers[0][0] == 'p': # VCTK
-    speaker_to_int = get_speaker_to_int('data/vctk_speakers.txt')
-    speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
-    num_speakers = 109
-elif args.speakers[0][0].lower() == 's': # aishell
-    speaker_to_int = get_speaker_to_int('data/aishell_speakers.txt')
-    speaker = [[0 for _ in range(340)] for _ in range(len(args.speakers))]
-    num_speakers = 340
-else: # LibriSpeech
-    speaker_to_int = get_speaker_to_int('data/librispeech_speakers.txt')
-    speaker = [[0 for _ in range(251)] for _ in range(len(args.speakers))]
-    num_speakers = 251
-for i, s in enumerate(args.speakers):
-    if s.lower() != 'none':
-        speaker[i][speaker_to_int[s]] = 1
-speaker = np.expand_dims(speaker, 1)
+  sess = tf.Session()
+  wav = sess.run(wav)
+  length = wav.shape[1]
 
-with open(args.parameter_path) as file:
-    parameters = json.load(file)
-encoders = {'Magenta': Encoder_Magenta, '64': Encoder_64, '2019': Encoder_2019}
-if parameters['encoder'] in encoders:
-    encoder = encoders[parameters['encoder']](parameters['latent_dim'])
-else:
-    raise NotImplementedError("encoder %s not implemented" % args.encoder)
-decoder = WavenetDecoder(parameters['wavenet_parameters'])
-model_args = {
-    'x': tf.constant(wav),
-    'speaker': tf.constant(speaker, dtype=np.float32),
-    'encoder': encoder,
-    'decoder': decoder,
-    'k': parameters['k'],
-    'beta': parameters['beta'],
-    'verbose': parameters['verbose'],
-    'use_vq': parameters['use_vq'],
-    'speaker_embedding': parameters['speaker_embedding'],
-    'num_speakers': num_speakers
-}
+  '''
+  speaker_to_int = get_speaker_to_int('data/vctk_info/vctk_speakers.txt')
+  speaker = [[0 for _ in range(109)] for _ in range(len(args.speakers))]
+  num_speakers = 109
+  '''
 
-model = VQVAE(model_args)
-model.build_generator()
-wavenet = model.decoder.wavenet
+  encoder = Encoder(scope='encoder', latent_dim=parameters.latent_dim, trainable=False)
+  vqvae = VQVAE(scope='vqvae', trainable=False)
+  condition = vqvae(encoder(wav))
+  print('condition:', condition.shape)
 
-variables = model.ema.variables_to_restore()
-saver = tf.train.Saver(variables)
-saver.restore(sess, args.restore_path)
+  h = [[i] for i in range(batch_size)]
+  gc_dim = 11
+  gc_embedding = tf.get_variable(
+      name='decoder/gc_embedding', 
+      shape=[gc_dim, parameters.global_embedding_dim])
+  h = tf.nn.embedding_lookup(gc_embedding, h)
+  h = tf.tile(h, [1, condition.get_shape().as_list()[1], 1])
+  condition = tf.concat([condition, h], axis=-1)
+  print('condition:', condition.shape)
 
-encoding = sess.run(model.encoding)
+  decoder = WaveNet(args=parameters.teacher, scope='decoder', trainable=False)
+  input_t = tf.placeholder(tf.float32, [batch_size, 1])
+  condition_t = tf.placeholder(tf.float32, [batch_size, condition.shape[-1]])
+  init_ops, push_ops, x = decoder.generate(input_t, condition_t, batch_size=batch_size)
 
-save_path = args.restore_path.split('/weights')[0]
+  saver = tf.train.Saver()
+  latest_checkpoint = tf.train.latest_checkpoint(args.restore)
+  gs = int(latest_checkpoint.split('-')[-1])
+  saver.restore(sess, latest_checkpoint)
 
-if parameters['use_vq']:
-    embedding = sess.run(model.embedding)
-    np.save(save_path + '/embedding_%d.npy' % gs, embedding)
-if parameters['speaker_embedding'] > 0:
-    embedding = sess.run(model.speaker_embedding)
-    np.save(save_path + '/speaker_embedding_%d.npy' % gs, embedding)
+  encoding = sess.run(condition)
 
-audio = np.zeros([batch_size, 1], dtype=np.float32)
-to_write = np.zeros([batch_size, length], dtype=np.float32)
-sess.run(wavenet.init_ops)
+  if parameters.use_vq:
+    embedding = sess.run(vqvae.codebook)
+    np.save(args.restore + '/embedding_%d.npy' % gs, embedding)
+  if parameters.global_embedding_dim > 0:
+    embedding = sess.run(gc_embedding)
+    np.save(args.restore + '/gc_embedding_%d.npy' % gs, embedding)
 
-ratio = length // encoding.shape[1]
-for i in tqdm(range(length)):
-    probs, _ = sess.run([wavenet.predictions, wavenet.push_ops], 
-        {wavenet.input_t: audio, wavenet.local_condition_t: encoding[:, i // ratio]})
-    decoded = decode(probs, mode=args.mode, quantization_channels=wavenet.args['quantization_channels'])
+  audio = np.zeros([batch_size, 1], dtype=np.float32)
+  to_write = np.zeros([batch_size, length], dtype=np.float32)
+  sess.run(init_ops)
+
+  ratio = length // encoding.shape[1]
+  print('ratio:', ratio)
+  for i in tqdm(range(length)):
+    probs, _ = sess.run([x, push_ops], 
+        {input_t: audio, condition_t: encoding[:, i // ratio]})
+    # decoded = decode(probs, mode=args.mode, quantization_channels=wavenet.args['quantization_channels'])
+    decoded = gaussian_sample(probs)
     to_write[:, i] = decoded
     audio = np.expand_dims(decoded, -1)
 
-for i, s in enumerate(args.speakers):
+  for i, s in enumerate(args.speakers):
     s = 'no_speaker' if s == 'None' else s
-    wavfile.write(save_path + '/%d_%s.wav'%(gs, s), 16000, to_write[i])
+    wavfile.write(args.restore + '/%d_%s.wav'%(gs, s), 16000, to_write[i])
+
+if __name__ == '__main__':
+  suppress_tf_warning()
+  main()
+
 
