@@ -35,6 +35,7 @@ def gaussian_sample(logits):
 def main():
   args = parse_args()
   batch_size = len(args.speakers)
+  batch_size = 11
 
   wav, _ = librosa.load(args.audio, sr=parameters.sr)
   # 512 is the largest dilation rate; change as needed
@@ -98,10 +99,13 @@ def main():
     decoded = gaussian_sample(probs)
     to_write[:, i] = decoded
     audio = np.expand_dims(decoded, -1)
-
+  '''
   for i, s in enumerate(args.speakers):
     s = 'no_speaker' if s == 'None' else s
     wavfile.write(args.restore + '/%d_%s.wav'%(gs, s), 16000, to_write[i])
+  '''
+  for i in range(batch_size):
+    wavfile.write(args.restore + '/%d_accent_%s.wav'%(gs, i), 16000, to_write[i])
 
 if __name__ == '__main__':
   suppress_tf_warning()
