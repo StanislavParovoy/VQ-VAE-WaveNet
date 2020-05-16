@@ -3,7 +3,6 @@ sr = 24000
 num_samples = 6656
 top_db = 25
 # vqvae
-encoder = '64'
 use_vq = True
 global_embedding_dim = 64
 k = 512

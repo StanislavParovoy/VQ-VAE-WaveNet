@@ -16,7 +16,8 @@ class VQVAE(object):
     self.codebook = tf.get_variable(
         name=self.scope + '/codebook',                         
         shape=[parameters.k, f],                          
-        initializer=tf.uniform_unit_scaling_initializer(1.4))
+        initializer=tf.initializers.he_uniform(seed=None))
+        # initializer=tf.uniform_unit_scaling_initializer(1.4))
     # z_e: [..., d] -> [..., 1, d]
     # codebook:             [k, d]
     expanded_ze = tf.expand_dims(z_e, -2)

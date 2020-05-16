@@ -4,6 +4,7 @@ import librosa, json, os
 from tqdm import tqdm
 from scipy.io import wavfile
 from utils import get_speaker_to_int
+from preprocess import file_to_npy, get_file_and_speaker
 import parameters
 
 def trim_silence(audio, threshold=0.01, frame_length=2048):
@@ -16,32 +17,12 @@ def trim_silence(audio, threshold=0.01, frame_length=2048):
   # Note: indices can be an empty array, if the whole audio was silence.
   return audio[indices[0]:indices[-1]] if indices.size else audio[0:0]
 
-def get_file_and_speaker(data_path, depth, filetype):
-  stack = [data_path.strip('/')]
-  # level-by-level bfs
-  for i in range(depth):
-    new_stack = []
-    for parent in stack:
-      for child in os.listdir(parent):
-        new_stack.append(parent + '/' + child)
-    stack = new_stack
-  total = []
-  for filename in stack:
-    if filename.endswith(filetype):
-      speaker = filename.split('/')[-depth]
-      total.append((filename, speaker))
-  print('num files total:', len(total))
-  return total
-
-def preprocess(wav):
-  wav, index = librosa.effects.trim(wav, top_db=parameters.top_db)
-  return wav
-
 class Dataset():
-  def __init__(self, data_path, batch_size, prefetch):
+  def __init__(self, data_path, batch_size, prefetch, in_memory):
     self.data_path = data_path
     self.batch_size = batch_size
     self.prefetch = prefetch
+    self.in_memory = in_memory
     self.make_iterator()
 
   def _get_file_and_speaker(self):
@@ -84,14 +65,20 @@ class VCTK(Dataset):
   def generator(self):
     file_and_speaker = self._get_file_and_speaker()
     indices = list(range(len(file_and_speaker)))
-    length = parameters.num_samples
+    if self.in_memory:
+      cache = {}
+      for filename, _ in tqdm(file_and_speaker):
+        npy_file = filename.replace('.wav', '.npy')
+        cache[filename] = np.load(npy_file)
     def gen():
       while True:
         i = np.random.choice(indices)
         filename, speaker = file_and_speaker[i]
         speaker_id = np.reshape(self.speaker_to_int[speaker], [1])
-        wav, _ = librosa.load(filename, sr=parameters.sr)
-        wav = preprocess(wav)
+        if self.in_memory:
+          wav = cache[filename]
+        else:
+          wav = file_to_npy(filename)
         if len(wav) < parameters.num_samples:
           continue
         start = np.random.randint(low=0, high=len(wav) - parameters.num_samples)
@@ -101,7 +88,7 @@ class VCTK(Dataset):
     return gen
 
   def _get_file_and_speaker(self):
-    return get_file_and_speaker(self.data_path, 2, 'wav')
+    return get_file_and_speaker(self.data_path, 2, 'npy' if self.in_memory else 'wav')
 
 
 class VCTK_AccentID:
@@ -134,8 +121,7 @@ class VCTK_AccentID:
 
 class VCTK_Accent(VCTK):
   def __init__(self, **kwargs):
-    accent_path = kwargs['data_path'].strip('/').strip('wav48') + '/speaker-info.txt'
-    # accent_path = 'VCTK-Corpus/speaker-info.txt'
+    accent_path = kwargs['data_path'].replace('/wav48', '') + '/speaker-info.txt'
     self.accent_id = VCTK_AccentID(accent_path)
     super(VCTK, self).__init__(**kwargs)
 
@@ -147,14 +133,21 @@ class VCTK_Accent(VCTK):
   def generator(self):
     file_and_speaker = self._get_file_and_speaker()
     indices = list(range(len(file_and_speaker)))
+    if self.in_memory:
+      cache = {}
+      for filename, _ in tqdm(file_and_speaker):
+        npy_file = filename.replace('.wav', '.npy')
+        cache[filename] = np.load(npy_file)
     def gen():
       while True:
         i = np.random.choice(indices)
         filename, speaker = file_and_speaker[i]
         accent_id = self.accent_id.name_to_accent_id(speaker.strip('p'))
         accent_id = np.reshape(accent_id, [1])
-        wav, _ = librosa.load(filename, sr=parameters.sr)
-        wav = preprocess(wav)
+        if self.in_memory:
+          wav = cache[filename]
+        else:
+          wav = file_to_npy(filename)
         if len(wav) < parameters.num_samples:
           continue
         start = np.random.randint(low=0, high=len(wav) - parameters.num_samples)
@@ -162,15 +155,4 @@ class VCTK_Accent(VCTK):
         wav = np.expand_dims(wav, -1)
         yield wav, accent_id
     return gen
-
-if __name__ == '__main__':
-  dataset = VCTK_Accent(data_path='VCTK-Corpus/wav48', batch_size=1, prefetch=0)
-  print(dataset.accent_id.s2i)
-  # dataset = VCTK(data_path='VCTK-Corpus/wav48', batch_size=1, prefetch=0)
-  sess = tf.Session()
-  sess.run(dataset.init)
-  for i in range(5):
-    print()
-    x, y = sess.run([dataset.x, dataset.y])
-    print(x.shape, y.shape, y)
 

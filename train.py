@@ -9,11 +9,11 @@ from argparse import ArgumentParser
 
 def parse_args():
   parser = ArgumentParser()
-  parser.add_argument('--dataset', default='VCTK-Corpus/wav48')
+  parser.add_argument('--dataset', '-d', default='VCTK-Corpus/wav48')
   parser.add_argument('-gc', default='accent', choices=['speaker', 'accent'])
-  parser.add_argument('--length', '-l', default=12000, type=int)
   parser.add_argument('--batch', '-b', default=8, type=int)
   parser.add_argument('--prefetch', '-p', default=64, type=int)
+  parser.add_argument('--in_memory', '-im', default=False, action='store_true')
   parser.add_argument('--step', '-s', default=10000, type=int)
   parser.add_argument('--model', '-m', default='teacher', choices=['teacher', 'student'])
   parser.add_argument('--save_teacher', '-st', default='saved_teacher')
@@ -109,7 +109,7 @@ def train(sess, saver, init, train_op, loss, global_step, args):
 
 def train_teacher(args):
   # build graph
-  dataset = make_dataset(args.gc, data_path=args.dataset, batch_size=args.batch, prefetch=args.prefetch)
+  dataset = make_dataset(args.gc, data_path=args.dataset, batch_size=args.batch, prefetch=args.prefetch, in_memory=args.in_memory)
   # dataset.y = Upsample(trainable=True)(dataset.y)
   encoder = Encoder(scope='encoder', latent_dim=parameters.latent_dim, trainable=True)
   vqvae = VQVAE(scope='vqvae', trainable=True)

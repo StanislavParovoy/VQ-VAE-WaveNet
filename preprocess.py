@@ -4,6 +4,7 @@ from tqdm import tqdm
 from scipy.io import wavfile
 import parameters
 from argparse import ArgumentParser
+from shutil import copyfile
 
 def parse_args():
   parser = ArgumentParser()
@@ -20,6 +21,8 @@ def get_file_and_speaker(data_path, depth, filetype):
   for i in range(depth):
     new_stack = []
     for parent in stack:
+      if os.path.isfile(parent):
+        continue
       for child in os.listdir(parent):
         new_stack.append(parent + '/' + child)
     stack = new_stack
@@ -41,6 +44,8 @@ def file_to_npy(file):
   return wav
 
 def preprocess_all(args):
+  accent_path = args.dataset.strip('/').strip('wav48') + '/speaker-info.txt'
+  copyfile(accent_path, args.save + '/speaker-info.txt')
   file_and_speaker = get_file_and_speaker(args.dataset, 2, args.filetype)
   for file, speaker in tqdm(file_and_speaker):
     name = file[file.rfind('/'): file.find('.' + args.filetype)]
