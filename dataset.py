@@ -43,7 +43,6 @@ class Dataset():
     dataset = dataset.batch(self.batch_size, drop_remainder=True)
     if self.prefetch is not None and self.prefetch > 0:
       dataset = dataset.prefetch(self.prefetch)
-    dataset = dataset.prefetch(self.prefetch)
     iterator = dataset.make_initializable_iterator()
     self.init = iterator.initializer
     self.x, y = iterator.get_next()
