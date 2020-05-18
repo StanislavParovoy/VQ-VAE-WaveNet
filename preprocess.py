@@ -44,6 +44,7 @@ def file_to_npy(file):
   return wav
 
 def preprocess_all(args):
+  os.makedirs(args.save, exist_ok=True)
   accent_path = args.dataset.strip('/').strip('wav48') + '/speaker-info.txt'
   copyfile(accent_path, args.save + '/speaker-info.txt')
   file_and_speaker = get_file_and_speaker(args.dataset, 2, args.filetype)
